@@ -77,11 +77,17 @@ function initMap() {
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
   map.addControl(new mapboxgl.ScaleControl(), "bottom-right");
 
-  map.on("load", () => {
+  // Use "style.load" (fires when the style JSON is parsed) rather than "load"
+  // (which waits for full tile rendering and can stall in some environments).
+  const onStyleReady = () => {
+    if (mapReady) return;            // run once
     mapReady = true;
     _setupSources();
     document.dispatchEvent(new Event("mapReady"));
-  });
+  };
+  map.on("style.load", onStyleReady);
+  // Fallback: if the style was already loaded before the handler attached.
+  if (map.isStyleLoaded && map.isStyleLoaded()) onStyleReady();
 }
 
 function _setupSources() {
@@ -404,7 +410,7 @@ function loadScramblesOnMap(scrambles, checked) {
         has_track: !!s.segment_uuid,
         seg_pr_s:  s.seg_pr_s || null,
         status: checked.has(s.id) ? "done"
-               : s.seg_attempts > 0 ? "attempted"
+               : (s.nearby_count > 0 || s.seg_attempts > 0) ? "attempted"
                : "not-yet",
       },
     }));

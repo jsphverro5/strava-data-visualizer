@@ -37,11 +37,25 @@ let state = {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Map layers draw when (and if) the map becomes ready — but the dashboard
+  // data and tables load immediately, independent of MapBox. This way a slow,
+  // blocked, or rate-limited map never leaves the whole page blank.
+  document.addEventListener("mapReady", drawMapLayers);
+  initApp();
   initMap();
-  document.addEventListener("mapReady", onMapReady);
+  // If the map happened to load before the listener attached, draw now.
+  if (typeof mapReady !== "undefined" && mapReady) drawMapLayers();
 });
 
-async function onMapReady() {
+let _appInitialized = false;
+async function initApp() {
+  if (_appInitialized) return;
+  _appInitialized = true;
+
+  // Controls and layout first so the UI is interactive even while data loads.
+  bindControls();
+  initResizeHandle();
+
   await loadTypeFilter();
   await Promise.all([
     loadSummary(),
@@ -50,12 +64,23 @@ async function onMapReady() {
     loadActivities(),
     loadTimeline(),
     loadSegments(),
-    loadSegments(),
   ]);
   renderMapboxQuota();
   await loadScramblesData();
-  bindControls();
-  initResizeHandle();
+
+  // Data is fully loaded now — (re)draw map layers in case the map became
+  // ready before the data arrived.
+  drawMapLayers();
+}
+
+// (Re)push map layers from whatever state is currently loaded. Safe to call
+// repeatedly — runs on map-ready and again after data finishes loading, so it
+// doesn't matter which finishes first.
+function drawMapLayers() {
+  if (typeof mapReady === "undefined" || !mapReady) return;
+  if (state.heatmapGeo)       loadHeatmap(state.heatmapGeo);
+  if (state.routes.length)    loadRouteMarkers(state.routes);
+  if (state.scrambles.length) loadScramblesOnMap(state.scrambles, getChecked());
 }
 
 // ── Data loaders ──────────────────────────────────────────────────────────────
@@ -116,7 +141,8 @@ async function loadSummary() {
 async function loadHeatmapData() {
   try {
     const geo = await API.heatmap(state.type);
-    loadHeatmap(geo);
+    state.heatmapGeo = geo;   // cache so the map can (re)draw it when ready
+    loadHeatmap(geo);         // no-ops if map not ready yet
   } catch (e) { console.warn("heatmap:", e); }
 }
 
@@ -152,6 +178,14 @@ async function loadSegments() {
 async function loadScramblesData() {
   try {
     state.scrambles = await API.scrambles();
+    // Enrich with nearby activity counts (determines "attempted" vs "not-yet" on map)
+    try {
+      const nearby = await API.scramblesNearby();
+      const nearbyMap = Object.fromEntries(nearby.map(n => [n.id, n.nearby_count]));
+      state.scrambles.forEach(s => {
+        s.nearby_count = nearbyMap[s.id] || s.seg_attempts || 0;
+      });
+    } catch (_) {}
     populateScramblesAreaFilter();
     renderScramblesTable();
     loadScramblesOnMap(state.scrambles, getChecked());
@@ -199,15 +233,19 @@ function renderScramblesTable() {
     tr.dataset.id = s.id;
 
     const stravaChip = hasStrava
-      ? `<span class="strava-chip" title="${s.seg_attempts} Strava attempts${s.seg_pr_s ? ', PR: '+fmtDuration(Math.round(s.seg_pr_s)) : ''}">⚡ ${s.seg_attempts}</span>`
-      : "";
+      ? `<span class="strava-chip" title="${s.seg_attempts} Strava segment attempts${s.seg_pr_s ? ', PR: '+fmtDuration(Math.round(s.seg_pr_s)) : ''}">⚡ ${s.seg_attempts}</span>`
+      : (s.nearby_count > 0
+        ? `<span class="strava-chip nearby" title="${s.nearby_count} nearby activities">📍 ${s.nearby_count}</span>`
+        : "");
+
+    const infoUrl = scrambleInfoUrl(s);
 
     tr.innerHTML = `
       <td class="check-col">
         <input type="checkbox" class="scramble-check" data-id="${s.id}" ${done ? "checked" : ""} />
       </td>
       <td>${s.formation}${stravaChip}</td>
-      <td>${s.route}</td>
+      <td>${s.route} <a href="${infoUrl}" target="_blank" class="info-link" title="Search Mountain Project" onclick="event.stopPropagation()">↗</a></td>
       <td>${s.area}</td>
       <td>${s.state}</td>
       <td><span class="class-badge cls-${String(s.class).replace(".","_")}">${s.class}</span></td>
@@ -249,19 +287,30 @@ function updateScramblesProgress() {
 
 async function flyToScramble(s) {
   if (!s.lat || !s.lon) return;
+
+  // Highlight row
+  document.querySelectorAll(".scramble-row").forEach(r =>
+    r.classList.toggle("active", r.dataset.id === s.id));
+
   // Fly map to the scramble
   if (typeof map !== "undefined" && map) {
-    map.flyTo({ center: [s.lon, s.lat], zoom: 13, speed: 1.4 });
+    map.flyTo({ center: [s.lon, s.lat], zoom: 14, speed: 1.4 });
   }
-  // Show track if linked to a segment
-  if (s.segment_uuid) {
-    try {
-      const coords = await API.scrambleTrack(s.id);
-      if (coords.length > 1) highlightSegment(coords);
-    } catch (_) {}
-  } else {
-    clearSegmentHighlight();
-  }
+
+  // Always try to fetch and highlight a track (segment-linked or nearest)
+  clearSegmentHighlight();
+  try {
+    const coords = await API.scrambleTrack(s.id);
+    if (coords && coords.length > 1) {
+      highlightSegment(coords);
+    }
+  } catch (_) {}
+}
+
+function scrambleInfoUrl(s) {
+  // Generate a Mountain Project search URL for the route
+  const q = encodeURIComponent(`${s.formation} ${s.route}`);
+  return `https://www.mountainproject.com/search?q=${q}&type=route`;
 }
 
 // ── Sorting helpers ───────────────────────────────────────────────────────────
@@ -665,20 +714,17 @@ function bindControls() {
     setScramblesVisible(e.target.checked);
   });
 
-  // Scramble marker click → fly to it and show track if available
+  // Scramble marker click → fly to it and show track
   document.addEventListener("scrambleMarkerClick", async (e) => {
-    const { id, name, formation, area, class: cls, elev_ft, has_track, seg_pr_s, status } = e.detail;
-    // Fly map is already done by marker click positioning
-    if (has_track === true || has_track === "true") {
-      const coords = await API.scrambleTrack(id);
-      if (coords.length > 1) highlightSegment(coords);
+    const { id } = e.detail;
+    const scr = state.scrambles.find(s => s.id === id);
+    if (scr) {
+      await flyToScramble(scr);
+      switchTab("scrambles");
+      // Scroll the row into view
+      const row = document.querySelector(`.scramble-row[data-id="${id}"]`);
+      if (row) row.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-    // Find and highlight the row in the scramble checklist if tab is visible
-    document.querySelectorAll(`.scramble-row`).forEach(r =>
-      r.classList.toggle("active", r.dataset.id === id));
-    // Show a toast with key info
-    const pr = seg_pr_s ? `  PR: ${fmtDuration(Math.round(seg_pr_s))}` : "";
-    showToast(`${formation} – ${name}  (${cls})${pr}`);
   });
 
   // Tab switching

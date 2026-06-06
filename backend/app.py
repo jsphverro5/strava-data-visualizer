@@ -354,23 +354,92 @@ def get_scrambles():
 
 @app.get("/api/scrambles/<scr_id>/track")
 def scramble_track(scr_id):
-    """Return GPS track for a scramble via its linked segment."""
+    """Return GPS track for a scramble.
+    Strategy: linked segment → use that activity's track.
+    No segment → find the activity with track points nearest to the scramble coords.
+    """
     with open(SCRAMBLES_PATH, "r") as f:
         scrambles = json.load(f)
     scr = next((s for s in scrambles if s["id"] == scr_id), None)
-    if not scr or not scr.get("segment_uuid"):
+    if not scr:
         return jsonify([])
+
     conn = get_conn()
-    pts = conn.execute("""
-        SELECT tp.lat, tp.lon FROM track_points tp
-        JOIN segment_efforts se ON se.activity_id = tp.activity_id
-        JOIN segments s ON s.uuid = se.segment_uuid
-        WHERE s.uuid = ?
-          AND se.elapsed_time_s = s.pr_time_s
-        ORDER BY tp.seq
-    """, (scr["segment_uuid"],)).fetchall()
+
+    # Strategy 1: linked segment → activity with PR effort
+    if scr.get("segment_uuid"):
+        effort = conn.execute("""
+            SELECT activity_id FROM segment_efforts
+            WHERE segment_uuid = ? AND elapsed_time_s IS NOT NULL
+            ORDER BY elapsed_time_s ASC LIMIT 1
+        """, (scr["segment_uuid"],)).fetchone()
+        if effort:
+            pts = conn.execute(
+                "SELECT lat, lon FROM track_points WHERE activity_id=? ORDER BY seq",
+                (effort["activity_id"],)
+            ).fetchall()
+            conn.close()
+            return jsonify([[r["lat"], r["lon"]] for r in pts])
+
+    # Strategy 2: find nearest activity by track point proximity
+    lat, lon = scr.get("lat"), scr.get("lon")
+    if not lat or not lon:
+        conn.close()
+        return jsonify([])
+
+    # Search for activities with track points within ~0.02 degrees (~2km)
+    buf = 0.02
+    nearby = conn.execute("""
+        SELECT activity_id, MIN(
+            (lat - ?) * (lat - ?) + (lon - ?) * (lon - ?)
+        ) as dist_sq
+        FROM track_points
+        WHERE lat BETWEEN ? AND ?
+          AND lon BETWEEN ? AND ?
+        GROUP BY activity_id
+        ORDER BY dist_sq ASC
+        LIMIT 1
+    """, (lat, lat, lon, lon,
+          lat - buf, lat + buf,
+          lon - buf, lon + buf)).fetchone()
+
+    if not nearby:
+        conn.close()
+        return jsonify([])
+
+    pts = conn.execute(
+        "SELECT lat, lon FROM track_points WHERE activity_id=? ORDER BY seq",
+        (nearby["activity_id"],)
+    ).fetchall()
     conn.close()
     return jsonify([[r["lat"], r["lon"]] for r in pts])
+
+
+@app.get("/api/scrambles/nearby")
+def scrambles_nearby():
+    """Find which scrambles have nearby activity tracks (for status detection)."""
+    with open(SCRAMBLES_PATH, "r") as f:
+        scrambles = json.load(f)
+
+    conn = get_conn()
+    result = []
+    buf = 0.015  # ~1.5km
+
+    for scr in scrambles:
+        lat, lon = scr.get("lat"), scr.get("lon")
+        if not lat or not lon:
+            continue
+        row = conn.execute("""
+            SELECT COUNT(DISTINCT activity_id) as cnt
+            FROM track_points
+            WHERE lat BETWEEN ? AND ?
+              AND lon BETWEEN ? AND ?
+        """, (lat - buf, lat + buf, lon - buf, lon + buf)).fetchone()
+        if row and row["cnt"] > 0:
+            result.append({"id": scr["id"], "nearby_count": row["cnt"]})
+
+    conn.close()
+    return jsonify(result)
 
 
 if __name__ == "__main__":

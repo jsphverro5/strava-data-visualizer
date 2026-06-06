@@ -23,4 +23,5 @@ const API = {
   segmentTrack:     (uuid)         => apiFetch(`/segments/${uuid}/track`),
   scrambles:        ()             => apiFetch("/scrambles"),
   scrambleTrack:    (id)           => apiFetch(`/scrambles/${id}/track`),
+  scramblesNearby:  ()             => apiFetch("/scrambles/nearby"),
 };

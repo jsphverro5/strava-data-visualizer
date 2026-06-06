@@ -3,14 +3,18 @@
 // Get one free at https://account.mapbox.com/
 // ⚠️  Replace with your own free MapBox token from https://account.mapbox.com
 // After creating your token, restrict it to http://localhost/* in the token settings.
-const MAPBOX_TOKEN = "YOUR_MAPBOX_TOKEN_HERE";
+//
+// 👉 Do NOT put your real token in this file (it's committed to git).
+//    Instead, copy frontend/js/config.local.example.js to frontend/js/config.local.js
+//    and put your token there. That file is gitignored and overrides the value below.
+let MAPBOX_TOKEN = "YOUR_MAPBOX_TOKEN_HERE";
 
 // API base URL (Flask backend)
-const API_BASE = "http://localhost:5050/api";
+let API_BASE = "http://localhost:5050/api";
 
-// Default map center & zoom
-const MAP_CENTER = [-105.2705, 40.0150]; // Boulder, CO
-const MAP_ZOOM   = 12;
+// Default map center & zoom (override in config.local.js for your region)
+let MAP_CENTER = [-105.2705, 40.0150]; // Boulder, CO
+let MAP_ZOOM   = 12;
 
 // Heatmap color ramp: low-freq → high-freq
 const HEATMAP_COLORS = {

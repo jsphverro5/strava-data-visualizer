@@ -12,6 +12,9 @@ data/strava.db-shm
 # Strava export (your raw data)
 strava-data/
 
+# Local config with private MapBox token
+frontend/js/config.local.js
+
 # macOS
 .DS_Store
 
