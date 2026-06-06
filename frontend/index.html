@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Strava Visualizer</title>
+
+  <!-- MapBox GL JS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span class="logo">⚡ Strava Viz</span>
+      <button id="sidebar-toggle" title="Collapse sidebar">◀</button>
+    </div>
+
+    <!-- Type filter + unit toggle -->
+    <div class="sidebar-section">
+      <label class="section-label">Activity Type</label>
+      <select id="type-filter">
+        <option value="">All types</option>
+      </select>
+      <div id="unit-toggle-wrap">
+        <span class="unit-label" id="unit-km" class="active">km</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="unit-toggle" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="unit-label" id="unit-mi">mi</span>
+      </div>
+    </div>
+
+    <!-- MapBox quota -->
+    <div class="sidebar-section" id="mb-quota-section">
+      <label class="section-label">MapBox Usage</label>
+      <div id="mb-quota-bar-wrap">
+        <div id="mb-quota-bar"><div id="mb-quota-fill"></div></div>
+        <span id="mb-quota-label"></span>
+      </div>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="sidebar-section" id="summary-stats">
+      <label class="section-label">Summary</label>
+      <div class="stat-grid" id="stat-grid"></div>
+    </div>
+
+    <!-- Top routes list -->
+    <div class="sidebar-section">
+      <label class="section-label">Top Routes</label>
+      <ul id="top-routes-list"></ul>
+    </div>
+
+    <!-- Timeline chart -->
+    <div class="sidebar-section">
+      <label class="section-label">Activity Timeline</label>
+      <canvas id="timeline-chart"></canvas>
+    </div>
+  </aside>
+
+  <!-- ── Main panel ──────────────────────────────────────────────── -->
+  <main id="main">
+
+    <!-- Map -->
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="map-controls">
+        <button id="btn-fit" title="Fit all tracks">⊡</button>
+        <div id="layer-toggles">
+          <label><input type="checkbox" id="toggle-heatmap" checked /> Heatmap</label>
+          <label><input type="checkbox" id="toggle-clusters" checked /> Routes</label>
+          <label><input type="checkbox" id="toggle-satellite" /> Satellite</label>
+          <label><input type="checkbox" id="toggle-scrambles" /> Scrambles</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize handle -->
+    <div id="resize-handle" title="Drag to resize"></div>
+
+    <!-- Tabs below map -->
+    <div id="bottom-panel">
+      <div id="tab-bar">
+        <button class="tab-btn active" data-tab="routes">Routes</button>
+        <button class="tab-btn" data-tab="activities">Activities</button>
+        <button class="tab-btn" data-tab="segments">Segments</button>
+        <button class="tab-btn" data-tab="scrambles">🧗 Scrambles</button>
+      </div>
+
+      <!-- Routes tab -->
+      <div id="tab-routes" class="tab-content active">
+        <div id="route-detail" class="hidden">
+          <div id="route-detail-header"></div>
+          <div id="route-detail-charts">
+            <canvas id="route-speed-chart"></canvas>
+          </div>
+          <div id="route-acts-table-wrap">
+            <table id="route-acts-table">
+              <thead>
+                <tr>
+                  <th data-col="date" data-type="date">Date <span class="sort-icon"></span></th>
+                  <th>Name</th>
+                  <th data-col="distance_m" data-type="num">Distance <span class="sort-icon"></span></th>
+                  <th data-col="duration_s" data-type="num">Duration <span class="sort-icon"></span></th>
+                  <th data-col="elevation_m" data-type="num">Elevation <span class="sort-icon"></span></th>
+                  <th data-col="avg_hr" data-type="num">Avg HR <span class="sort-icon"></span></th>
+                  <th data-col="avg_speed_ms" data-type="num">Avg Spd <span class="sort-icon"></span></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="routes-table-wrap">
+          <div id="routes-toolbar">
+            <input type="text" id="route-search" placeholder="Search routes…" />
+            <span id="routes-count"></span>
+          </div>
+          <table id="routes-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th data-col="name" data-type="str">Route Name <span class="sort-icon"></span></th>
+                <th data-col="count" data-type="num">Runs <span class="sort-icon">▼</span></th>
+                <th data-col="total_distance_m" data-type="num">Distance <span class="sort-icon"></span></th>
+                <th data-col="best_duration_s" data-type="num">Best Time <span class="sort-icon"></span></th>
+                <th data-col="avg_duration_s" data-type="num">Avg Time <span class="sort-icon"></span></th>
+                <th data-col="best_speed_ms" data-type="num">Best Pace <span class="sort-icon"></span></th>
+                <th data-col="avg_elevation_m" data-type="num">Avg Elev <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="routes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Segments tab -->
+      <div id="tab-segments" class="tab-content">
+        <div id="segments-toolbar">
+          <input type="text" id="segment-search" placeholder="Search segments…" />
+          <label class="starred-filter">
+            <input type="checkbox" id="toggle-starred" /> ⭐ Starred only
+          </label>
+          <span id="segments-count"></span>
+        </div>
+
+        <!-- Segment detail (shown when a segment is selected) -->
+        <div id="segment-detail" class="hidden">
+          <div id="segment-detail-header"></div>
+          <div id="segment-efforts-wrap">
+            <table id="segment-efforts-table">
+              <thead>
+                <tr>
+                  <th data-col="start_time" data-type="date">Date <span class="sort-icon">▼</span></th>
+                  <th>Activity</th>
+                  <th data-col="elapsed_time_s" data-type="num">Time <span class="sort-icon"></span></th>
+                  <th data-col="distance_m" data-type="num">Dist <span class="sort-icon"></span></th>
+                  <th data-col="avg_speed_ms" data-type="num">Pace <span class="sort-icon"></span></th>
+                  <th data-col="avg_hr" data-type="num">HR <span class="sort-icon"></span></th>
+                  <th>PR?</th>
+                </tr>
+              </thead>
+              <tbody id="segment-efforts-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Segments list -->
+        <div id="segments-list-wrap">
+          <table id="segments-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th data-col="name" data-type="str">Segment <span class="sort-icon"></span></th>
+                <th data-col="attempt_count" data-type="num">Attempts <span class="sort-icon">▼</span></th>
+                <th data-col="effort_count" data-type="num">Finished <span class="sort-icon"></span></th>
+                <th data-col="pr_time_s" data-type="num">PR Time <span class="sort-icon"></span></th>
+                <th data-col="avg_time_s" data-type="num">Avg Time <span class="sort-icon"></span></th>
+                <th data-col="sport" data-type="str">Sport <span class="sort-icon"></span></th>
+                <th>⭐</th>
+              </tr>
+            </thead>
+            <tbody id="segments-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Scrambles tab -->
+      <div id="tab-scrambles" class="tab-content">
+        <div id="scrambles-toolbar">
+          <input type="text" id="scramble-search" placeholder="Search routes, peaks, areas…" />
+          <select id="scramble-state-filter">
+            <option value="">All states</option>
+            <option value="CO">Colorado</option>
+            <option value="WY">Wyoming</option>
+            <option value="CA">California</option>
+          </select>
+          <select id="scramble-area-filter">
+            <option value="">All areas</option>
+          </select>
+          <select id="scramble-class-filter">
+            <option value="">All classes</option>
+            <option value="3">Class 3</option>
+            <option value="4">Class 4</option>
+            <option value="5">Class 5</option>
+          </select>
+          <label class="starred-filter">
+            <input type="checkbox" id="scramble-done-only" /> Done only
+          </label>
+          <label class="starred-filter">
+            <input type="checkbox" id="scramble-undone-only" /> To-do only
+          </label>
+          <span id="scrambles-count"></span>
+        </div>
+        <div id="scrambles-progress-bar-wrap">
+          <div id="scrambles-progress-bar"><div id="scrambles-progress-fill"></div></div>
+          <span id="scrambles-progress-label"></span>
+        </div>
+        <div id="scrambles-list-wrap">
+          <table id="scrambles-table">
+            <thead>
+              <tr>
+                <th class="check-col">Done</th>
+                <th data-col="formation" data-type="str">Formation / Peak <span class="sort-icon"></span></th>
+                <th data-col="route" data-type="str">Route <span class="sort-icon"></span></th>
+                <th data-col="area" data-type="str">Area <span class="sort-icon">▲</span></th>
+                <th data-col="state" data-type="str">State <span class="sort-icon"></span></th>
+                <th data-col="class" data-type="str">Class <span class="sort-icon"></span></th>
+                <th data-col="elev_ft" data-type="num">Elevation <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="scrambles-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Activities tab -->
+      <div id="tab-activities" class="tab-content">
+        <div id="activities-toolbar">
+          <input type="text" id="activity-search" placeholder="Search activities…" />
+          <span id="activities-count"></span>
+        </div>
+        <table id="activities-table">
+          <thead>
+            <tr>
+              <th data-col="date" data-type="date">Date <span class="sort-icon">▼</span></th>
+              <th data-col="name" data-type="str">Name <span class="sort-icon"></span></th>
+              <th data-col="type" data-type="str">Type <span class="sort-icon"></span></th>
+              <th data-col="distance_m" data-type="num">Distance <span class="sort-icon"></span></th>
+              <th data-col="duration_s" data-type="num">Duration <span class="sort-icon"></span></th>
+              <th data-col="elevation_m" data-type="num">Elevation <span class="sort-icon"></span></th>
+              <th data-col="avg_hr" data-type="num">Avg HR <span class="sort-icon"></span></th>
+              <th data-col="avg_speed_ms" data-type="num">Avg Speed <span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="activities-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/api.js"></script>
+<script src="js/map.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/scrambles.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

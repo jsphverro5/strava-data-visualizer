@@ -1,0 +1,8 @@
+flask==3.0.3
+flask-cors==4.0.1
+gpxpy==1.6.2
+fitparse==1.2.0
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.13.1
+polyline==2.0.2
