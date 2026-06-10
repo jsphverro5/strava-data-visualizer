@@ -62,7 +62,13 @@ def init_db():
             start_lon       REAL,
             end_lat         REAL,
             end_lon         REAL,
-            representative_activity_id TEXT
+            representative_activity_id TEXT,
+            custom_name     TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS route_names (
+            coord_key       TEXT PRIMARY KEY,  -- rounded "slat,slon,elat,elon"
+            name            TEXT
         );
 
         CREATE TABLE IF NOT EXISTS athletes (

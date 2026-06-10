@@ -790,6 +790,19 @@ tr.done-row td.check-col { text-decoration: none; opacity: 1; }
 .pyramid-fill { display: block; height: 100%; background: var(--green); border-radius: 999px; }
 .pyramid-count { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
 
+/* ── Route rename ─────────────────────────────────────────────────────────── */
+.rename-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--accent2);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  outline: none;
+}
+.renamed-dot { color: var(--accent2); font-size: 7px; vertical-align: middle; }
+
 /* ── Utility ──────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 

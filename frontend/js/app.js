@@ -500,12 +500,49 @@ function bindTableSort(tableId, sortStateKey, renderFn) {
 
 // ── Table renderers ───────────────────────────────────────────────────────────
 
+function routeDisplayName(r) {
+  return r.custom_name || r.name;
+}
+
+function startRouteRename(cell, route) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "rename-input";
+  input.value = routeDisplayName(route);
+  cell.innerHTML = "";
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+  input.addEventListener("click", e => e.stopPropagation());
+
+  let finished = false;
+  const finish = async (save) => {
+    if (finished) return;
+    finished = true;
+    const newName = input.value.trim();
+    if (save && newName && newName !== routeDisplayName(route)) {
+      try {
+        await API.renameRoute(route.id, newName);
+        route.custom_name = newName;
+        loadSummary(); // refresh top-routes sidebar
+      } catch (e) { showToast("Rename failed"); }
+    }
+    renderRoutesTable();
+  };
+
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter")  finish(true);
+    if (e.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+
 function renderRoutesTable() {
   const filter  = state.routeFilter.toLowerCase();
   const sort    = state.routeSort;
 
   let data = state.routes;
-  if (filter) data = data.filter(r => r.name.toLowerCase().includes(filter));
+  if (filter) data = data.filter(r => routeDisplayName(r).toLowerCase().includes(filter));
   data = sortData(data, sort.col, sort.dir, sort.type || "num");
 
   const tbody = document.getElementById("routes-tbody");
@@ -515,7 +552,7 @@ function renderRoutesTable() {
     tr.dataset.routeId = r.id;
     tr.innerHTML = `
       <td>${i + 1}</td>
-      <td class="name-cell">${r.name}</td>
+      <td class="name-cell" title="Double-click to rename">${routeDisplayName(r)}${r.custom_name ? ' <span class="renamed-dot" title="Custom name">●</span>' : ""}</td>
       <td><span class="count-badge">${r.count}</span></td>
       <td>${fmtDist(r.total_distance_m)}</td>
       <td>${fmtDuration(r.best_duration_s)}</td>
@@ -523,6 +560,14 @@ function renderRoutesTable() {
       <td>${fmtPace(r.best_speed_ms)}</td>
       <td>${fmtEle(r.avg_elevation_m)}</td>`;
     tr.addEventListener("click", () => selectRoute(r.id));
+
+    // Double-click name cell → inline rename
+    const nameCell = tr.querySelector(".name-cell");
+    nameCell.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRouteRename(nameCell, r);
+    });
+
     tbody.appendChild(tr);
   });
 
@@ -743,7 +788,7 @@ function showRouteDetail(route, acts) {
   const header = document.getElementById("route-detail-header");
   header.innerHTML = `
     <button id="back-to-routes">← All Routes</button>
-    <h2>${route?.name ?? "Route"}</h2>
+    <h2>${route ? routeDisplayName(route) : "Route"}</h2>
     <div class="route-summary-chips">
       <span class="chip">${route?.count ?? "?"} runs</span>
       <span class="chip">Best: ${fmtDuration(route?.best_duration_s)}</span>

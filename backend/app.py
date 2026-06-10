@@ -190,6 +190,31 @@ def route_activities(route_id):
     return jsonify([row_to_dict(a) for a in acts])
 
 
+@app.post("/api/routes/<int:route_id>/name")
+def rename_route(route_id):
+    """Set a custom route name. Persisted by coordinates so it survives re-ingest."""
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT start_lat, start_lon, end_lat, end_lon FROM route_clusters WHERE id=?",
+        (route_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    conn.execute("UPDATE route_clusters SET custom_name=? WHERE id=?",
+                 (name or None, route_id))
+    key = f'{row["start_lat"]:.3f},{row["start_lon"]:.3f},{row["end_lat"]:.3f},{row["end_lon"]:.3f}'
+    if name:
+        conn.execute("INSERT OR REPLACE INTO route_names (coord_key, name) VALUES (?,?)",
+                     (key, name))
+    else:
+        conn.execute("DELETE FROM route_names WHERE coord_key=?", (key,))
+    conn.commit()
+    conn.close()
+    return jsonify({"id": route_id, "name": name})
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/stats/summary")
@@ -210,7 +235,8 @@ def stats_summary():
         FROM activities GROUP BY type ORDER BY count DESC
     """).fetchall()
     top_routes = conn.execute("""
-        SELECT id, name, count, total_distance_m, best_duration_s, avg_duration_s
+        SELECT id, COALESCE(custom_name, name) as name, count,
+               total_distance_m, best_duration_s, avg_duration_s
         FROM route_clusters ORDER BY count DESC LIMIT 10
     """).fetchall()
     conn.close()

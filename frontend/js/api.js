@@ -33,4 +33,9 @@ const API = {
                                       }).then(r => r.json()),
   activityProfile:  (id)           => apiFetch(`/activities/${id}/profile`),
   yearStats:        (type)         => apiFetch("/stats/years", { type }),
+  renameRoute:      (id, name)     => fetch(`${API_BASE}/routes/${id}/name`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ name }),
+                                      }).then(r => r.json()),
 };

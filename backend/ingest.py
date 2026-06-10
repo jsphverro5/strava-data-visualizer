@@ -259,6 +259,26 @@ def cluster_routes(conn):
             rep["slat"], rep["slon"], rep["elat"], rep["elon"], rep["id"],
         ))
 
+    # Restore saved custom names (keyed by rounded start/end coords) so user
+    # renames survive re-ingest/re-clustering.
+    try:
+        saved = {r["coord_key"]: r["name"]
+                 for r in cur.execute("SELECT coord_key, name FROM route_names").fetchall()}
+        if saved:
+            restored = 0
+            for row in cur.execute(
+                "SELECT id, start_lat, start_lon, end_lat, end_lon FROM route_clusters"
+            ).fetchall():
+                key = (f'{row["start_lat"]:.3f},{row["start_lon"]:.3f},'
+                       f'{row["end_lat"]:.3f},{row["end_lon"]:.3f}')
+                if key in saved:
+                    cur.execute("UPDATE route_clusters SET custom_name=? WHERE id=?",
+                                (saved[key], row["id"]))
+                    restored += 1
+            print(f"  Restored {restored} custom route names.")
+    except Exception as e:
+        print(f"  [warn] could not restore route names: {e}")
+
     conn.commit()
     print(f"  Clustered {len(acts)} activities into {len(clusters)} route groups.")
 
