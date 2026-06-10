@@ -63,16 +63,11 @@ def get_track(act_id):
 
 # ── Heatmap ───────────────────────────────────────────────────────────────────
 
-@app.get("/api/heatmap")
-def heatmap():
-    """
-    Return all track lines as GeoJSON FeatureCollection.
-    Each feature has `activity_id`, `count` (cluster size), and `name`.
-    Filtered by activity type if ?type= is provided.
-    """
-    atype = request.args.get("type")
-    conn = get_conn()
+# Cache: type → GeoJSON dict. Cleared on restart (data only changes at ingest).
+_heatmap_cache = {}
 
+def _build_heatmap(atype):
+    conn = get_conn()
     q = """
         SELECT a.id, a.name, a.type, a.date,
                tp.lat, tp.lon, tp.seq
@@ -85,11 +80,9 @@ def heatmap():
         q += " AND a.type=?"
         params.append(atype)
     q += " ORDER BY a.id, tp.seq"
-
     rows = conn.execute(q, params).fetchall()
     conn.close()
 
-    # Group by activity
     tracks = {}
     for r in rows:
         aid = r["id"]
@@ -97,10 +90,27 @@ def heatmap():
             tracks[aid] = {"name": r["name"], "type": r["type"], "date": r["date"], "coords": []}
         tracks[aid]["coords"].append([r["lon"], r["lat"]])
 
+    # Frequency scoring server-side: grid cells ~55m, count distinct activities
+    # per cell, then tag each track with the max cell count it passes through.
+    CELL = 0.0005
+    freq = {}
+    for aid, data in tracks.items():
+        seen = set()
+        for lon, lat in data["coords"]:
+            key = (round(lon / CELL), round(lat / CELL))
+            if key not in seen:
+                seen.add(key)
+                freq[key] = freq.get(key, 0) + 1
+
     features = []
     for aid, data in tracks.items():
         if len(data["coords"]) < 2:
             continue
+        max_f = 1
+        for lon, lat in data["coords"]:
+            f = freq.get((round(lon / CELL), round(lat / CELL)), 1)
+            if f > max_f:
+                max_f = f
         features.append({
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": data["coords"]},
@@ -109,10 +119,21 @@ def heatmap():
                 "name": data["name"],
                 "type": data["type"],
                 "date": data["date"],
+                "frequency": max_f,
             }
         })
 
-    return jsonify({"type": "FeatureCollection", "features": features})
+    return {"type": "FeatureCollection", "features": features}
+
+
+@app.get("/api/heatmap")
+def heatmap():
+    """Track lines as GeoJSON, with per-track `frequency` precomputed and cached."""
+    atype = request.args.get("type") or ""
+    if atype not in _heatmap_cache:
+        # Cache the serialized string — re-serializing 600k+ coords per request is slow
+        _heatmap_cache[atype] = json.dumps(_build_heatmap(atype or None))
+    return app.response_class(_heatmap_cache[atype], mimetype="application/json")
 
 
 # ── Route clusters ────────────────────────────────────────────────────────────
@@ -181,7 +202,7 @@ def stats_summary():
             SUM(duration_s)/3600.0 as total_hours,
             SUM(elevation_m) as total_elevation_m,
             AVG(avg_hr) as avg_hr,
-            COUNT(DISTINCT substr(date,1,instr(date,',')+instr(substr(date,instr(date,',')+1),',')-1)) as active_days
+            COUNT(DISTINCT date(date)) as active_days
         FROM activities
     """).fetchone()
     by_type = conn.execute("""
@@ -381,68 +402,182 @@ def scramble_track(scr_id):
             conn.close()
             return jsonify([[r["lat"], r["lon"]] for r in pts])
 
-    # Strategy 2: find nearest activity by track point proximity
+    # Strategy 2: best-matching activity = most track points close to the route.
+    # A tight radius (~200m) plus a point-count score avoids picking a trail
+    # that merely passes through the area.
     lat, lon = scr.get("lat"), scr.get("lon")
     if not lat or not lon:
         conn.close()
         return jsonify([])
 
-    # Search for activities with track points within ~0.02 degrees (~2km)
-    buf = 0.02
-    nearby = conn.execute("""
-        SELECT activity_id, MIN(
-            (lat - ?) * (lat - ?) + (lon - ?) * (lon - ?)
-        ) as dist_sq
+    buf = 0.002  # ~200m
+    best = conn.execute("""
+        SELECT activity_id, COUNT(*) as pts
         FROM track_points
-        WHERE lat BETWEEN ? AND ?
-          AND lon BETWEEN ? AND ?
+        WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?
         GROUP BY activity_id
-        ORDER BY dist_sq ASC
+        ORDER BY pts DESC
         LIMIT 1
-    """, (lat, lat, lon, lon,
-          lat - buf, lat + buf,
-          lon - buf, lon + buf)).fetchone()
+    """, (lat - buf, lat + buf, lon - buf, lon + buf)).fetchone()
 
-    if not nearby:
+    if not best:
         conn.close()
         return jsonify([])
 
     pts = conn.execute(
         "SELECT lat, lon FROM track_points WHERE activity_id=? ORDER BY seq",
-        (nearby["activity_id"],)
+        (best["activity_id"],)
     ).fetchall()
     conn.close()
     return jsonify([[r["lat"], r["lon"]] for r in pts])
 
 
+# Ascent detection: an activity "visits" a scramble if it has >=3 downsampled
+# track points within ~200m of the route coords (passing trails rarely linger).
+_VISIT_BUF   = 0.002
+_VISIT_MIN_PTS = 3
+
+def _scramble_visits(conn, lat, lon):
+    return conn.execute("""
+        SELECT tp.activity_id, COUNT(*) as pts, a.name, a.date, a.type,
+               a.duration_s, a.distance_m, a.elevation_m
+        FROM track_points tp
+        JOIN activities a ON a.id = tp.activity_id
+        WHERE tp.lat BETWEEN ? AND ? AND tp.lon BETWEEN ? AND ?
+        GROUP BY tp.activity_id
+        HAVING pts >= ?
+        ORDER BY a.date DESC
+    """, (lat - _VISIT_BUF, lat + _VISIT_BUF,
+          lon - _VISIT_BUF, lon + _VISIT_BUF, _VISIT_MIN_PTS)).fetchall()
+
+
 @app.get("/api/scrambles/nearby")
 def scrambles_nearby():
-    """Find which scrambles have nearby activity tracks (for status detection)."""
+    """Per-scramble count of likely ascents (activities lingering near the route)."""
     with open(SCRAMBLES_PATH, "r") as f:
         scrambles = json.load(f)
-
     conn = get_conn()
     result = []
-    buf = 0.015  # ~1.5km
-
     for scr in scrambles:
         lat, lon = scr.get("lat"), scr.get("lon")
         if not lat or not lon:
             continue
-        row = conn.execute("""
-            SELECT COUNT(DISTINCT activity_id) as cnt
-            FROM track_points
-            WHERE lat BETWEEN ? AND ?
-              AND lon BETWEEN ? AND ?
-        """, (lat - buf, lat + buf, lon - buf, lon + buf)).fetchone()
-        if row and row["cnt"] > 0:
-            result.append({"id": scr["id"], "nearby_count": row["cnt"]})
-
+        visits = _scramble_visits(conn, lat, lon)
+        if visits:
+            result.append({"id": scr["id"], "nearby_count": len(visits)})
     conn.close()
     return jsonify(result)
 
 
+@app.get("/api/scrambles/<scr_id>/visits")
+def scramble_visits(scr_id):
+    """Likely ascent dates for one scramble, newest first."""
+    with open(SCRAMBLES_PATH, "r") as f:
+        scrambles = json.load(f)
+    scr = next((s for s in scrambles if s["id"] == scr_id), None)
+    if not scr or not scr.get("lat"):
+        return jsonify([])
+    conn = get_conn()
+    visits = _scramble_visits(conn, scr["lat"], scr["lon"])
+    conn.close()
+    return jsonify([row_to_dict(v) for v in visits])
+
+
+# ── Scramble checklist (persisted server-side) ────────────────────────────────
+
+@app.get("/api/checklist")
+def get_checklist():
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT scramble_id FROM scramble_checklist WHERE done=1").fetchall()
+    conn.close()
+    return jsonify([r["scramble_id"] for r in rows])
+
+
+@app.post("/api/checklist/<scr_id>")
+def set_checklist(scr_id):
+    done = bool((request.get_json(silent=True) or {}).get("done", True))
+    conn = get_conn()
+    if done:
+        conn.execute("""
+            INSERT OR REPLACE INTO scramble_checklist (scramble_id, done, done_date)
+            VALUES (?, 1, datetime('now'))
+        """, (scr_id,))
+    else:
+        conn.execute("DELETE FROM scramble_checklist WHERE scramble_id=?", (scr_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"id": scr_id, "done": done})
+
+
+# ── Elevation profile ─────────────────────────────────────────────────────────
+
+@app.get("/api/activities/<act_id>/profile")
+def activity_profile(act_id):
+    """Elevation profile: list of [cumulative_distance_m, elevation_m]."""
+    import math
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT lat, lon, ele FROM track_points WHERE activity_id=? ORDER BY seq",
+        (act_id,)
+    ).fetchall()
+    conn.close()
+
+    profile = []
+    dist = 0.0
+    prev = None
+    for r in rows:
+        if r["ele"] is None:
+            continue
+        if prev is not None:
+            p = math.pi / 180
+            a = (math.sin((r["lat"] - prev[0]) * p / 2) ** 2
+                 + math.cos(prev[0] * p) * math.cos(r["lat"] * p)
+                 * math.sin((r["lon"] - prev[1]) * p / 2) ** 2)
+            dist += 2 * 6371000 * math.asin(math.sqrt(a))
+        prev = (r["lat"], r["lon"])
+        profile.append([round(dist), round(r["ele"], 1)])
+    return jsonify(profile)
+
+
+# ── Year-over-year stats ──────────────────────────────────────────────────────
+
+@app.get("/api/stats/years")
+def stats_years():
+    atype = request.args.get("type")
+    conn = get_conn()
+    q = """
+        SELECT strftime('%Y', date) as year,
+               COUNT(*) as count,
+               SUM(distance_m)/1000.0 as km,
+               SUM(elevation_m) as elevation_m,
+               SUM(duration_s)/3600.0 as hours
+        FROM activities
+        WHERE date != ''
+    """
+    params = []
+    if atype:
+        q += " AND type=?"
+        params.append(atype)
+    q += " GROUP BY year ORDER BY year DESC"
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return jsonify([row_to_dict(r) for r in rows])
+
+
+def _prewarm_heatmap():
+    """Build the all-types heatmap cache in the background so the first page
+    load doesn't wait ~10s for it."""
+    try:
+        _heatmap_cache[""] = json.dumps(_build_heatmap(None))
+        print("Heatmap cache pre-warmed.")
+    except Exception as e:
+        print(f"Heatmap pre-warm failed (will build on first request): {e}")
+
+
 if __name__ == "__main__":
+    import threading
     init_db()
+    threading.Thread(target=_prewarm_heatmap, daemon=True).start()
     print("Starting Strava Visualizer API on http://localhost:5050")
-    app.run(port=5050, debug=True)
+    app.run(port=5050, debug=False)

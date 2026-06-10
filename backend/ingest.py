@@ -39,6 +39,20 @@ def haversine(lat1, lon1, lat2, lon2):
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def parse_date_iso(s):
+    """Normalize Strava CSV dates ('Sep 9, 2023, 7:25:02 PM' or ISO) to ISO 8601."""
+    if not s:
+        return ""
+    s = s.strip()
+    from datetime import datetime
+    for fmt in ("%b %d, %Y, %I:%M:%S %p", "%B %d, %Y, %I:%M:%S %p"):
+        try:
+            return datetime.strptime(s, fmt).isoformat()
+        except ValueError:
+            pass
+    return s  # already ISO or unknown format — store as-is
+
+
 def parse_duration(s):
     if not s:
         return None
@@ -272,7 +286,7 @@ def ingest(export_dir, region=None, workers=None):
         if not act_id:
             continue
         name     = row.get("Activity Name") or row.get("Name") or ""
-        date_str = row.get("Activity Date") or row.get("Date") or ""
+        date_str = parse_date_iso(row.get("Activity Date") or row.get("Date") or "")
         atype    = row.get("Activity Type") or row.get("Type") or ""
         dist     = safe_float(row.get("Distance") or "0")
         # Strava CSV exports distance already in meters — no conversion needed

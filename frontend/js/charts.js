@@ -2,6 +2,65 @@
 
 let timelineChart = null;
 let routeSpeedChart = null;
+let elevationChart = null;
+
+function renderElevationProfile(profile, title) {
+  // profile: [[cumulative_m, ele_m], ...]
+  const overlay = document.getElementById("elevation-overlay");
+  const titleEl = document.getElementById("elevation-title");
+  overlay.classList.remove("hidden");
+  if (titleEl) titleEl.textContent = title || "Elevation profile";
+
+  const toDist = m => USE_MILES ? m / 1609.344 : m / 1000;
+  const toEle  = m => USE_MILES ? m * 3.28084 : m;
+  const distUnit = USE_MILES ? "mi" : "km";
+  const eleUnit  = USE_MILES ? "ft" : "m";
+
+  const data = profile.map(([d, e]) => ({ x: toDist(d), y: toEle(e) }));
+
+  if (elevationChart) elevationChart.destroy();
+  const ctx = document.getElementById("elevation-chart").getContext("2d");
+  elevationChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [{
+        data,
+        borderColor: "#22d3ee",
+        backgroundColor: "rgba(34,211,238,0.12)",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => `${items[0].parsed.x.toFixed(1)} ${distUnit}`,
+            label: item => `${Math.round(item.parsed.y).toLocaleString()} ${eleUnit}`,
+          },
+        },
+      },
+      scales: {
+        x: { type: "linear", ticks: { color: "#64748b", maxTicksLimit: 8,
+              callback: v => v.toFixed(0) }, grid: { color: "#1e293b" },
+             title: { display: true, text: distUnit, color: "#64748b" } },
+        y: { ticks: { color: "#64748b", maxTicksLimit: 5,
+              callback: v => Math.round(v).toLocaleString() }, grid: { color: "#1e293b" } },
+      },
+    },
+  });
+}
+
+function hideElevationProfile() {
+  document.getElementById("elevation-overlay").classList.add("hidden");
+  if (elevationChart) { elevationChart.destroy(); elevationChart = null; }
+}
 
 const CHART_DEFAULTS = {
   responsive: true,

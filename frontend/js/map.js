@@ -261,35 +261,8 @@ function _setupSources() {
 function loadHeatmap(geojson) {
   if (!mapReady) return;
 
-  // Compute per-feature frequency from overlap scoring
-  // We bucket each coordinate pair to a grid cell and count crossings
-  const CELL = 0.0005; // ~55m
-  const freq = {};
-  for (const f of geojson.features) {
-    const seen = new Set();
-    for (const [lng, lat] of f.geometry.coordinates) {
-      const key = `${Math.round(lng/CELL)},${Math.round(lat/CELL)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        freq[key] = (freq[key] || 0) + 1;
-      }
-    }
-  }
-
-  // Tag each feature with max frequency encountered along its path
-  const tagged = geojson.features.map(f => {
-    let maxF = 1;
-    for (const [lng, lat] of f.geometry.coordinates) {
-      const key = `${Math.round(lng/CELL)},${Math.round(lat/CELL)}`;
-      if ((freq[key] || 0) > maxF) maxF = freq[key];
-    }
-    return { ...f, properties: { ...f.properties, frequency: maxF } };
-  });
-
-  map.getSource("heatmap-source").setData({
-    type: "FeatureCollection",
-    features: tagged,
-  });
+  // Frequency is precomputed server-side (properties.frequency); use as-is.
+  map.getSource("heatmap-source").setData(geojson);
 
   if (geojson.features.length > 0) {
     try {

@@ -24,4 +24,13 @@ const API = {
   scrambles:        ()             => apiFetch("/scrambles"),
   scrambleTrack:    (id)           => apiFetch(`/scrambles/${id}/track`),
   scramblesNearby:  ()             => apiFetch("/scrambles/nearby"),
+  scrambleVisits:   (id)           => apiFetch(`/scrambles/${id}/visits`),
+  checklist:        ()             => apiFetch("/checklist"),
+  setChecklist:     (id, done)     => fetch(`${API_BASE}/checklist/${id}`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ done }),
+                                      }).then(r => r.json()),
+  activityProfile:  (id)           => apiFetch(`/activities/${id}/profile`),
+  yearStats:        (type)         => apiFetch("/stats/years", { type }),
 };

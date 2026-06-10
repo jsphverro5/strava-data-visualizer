@@ -686,7 +686,7 @@ tr.done-row td.check-col { text-decoration: none; opacity: 1; }
 }
 .cls-3       { background: rgba(34,197,94,0.15);  color: var(--green); }
 .cls-4       { background: rgba(249,115,22,0.15); color: var(--accent); }
-.cls-5_0, .cls-5_1, .cls-2_2, .cls-5_3, .cls-5_4 { background: rgba(239,68,68,0.15); color: #ef4444; }
+.cls-5_0, .cls-5_1, .cls-5_2, .cls-5_3, .cls-5_4 { background: rgba(239,68,68,0.15); color: #ef4444; }
 .cls-5_5, .cls-5_6, .cls-5_7, .cls-5_8 { background: rgba(168,85,247,0.15); color: #a855f7; }
 
 /* Strava chip */
@@ -716,6 +716,79 @@ tr.done-row td.check-col { text-decoration: none; opacity: 1; }
 
 /* Map scramble legend */
 #layer-toggles label:last-child { color: var(--green); }
+
+/* ── Year stats table (sidebar) ───────────────────────────────────────────── */
+#year-stats-table { width: 100%; font-size: 11px; }
+#year-stats-table th {
+  padding: 3px 6px; font-size: 9px; position: static;
+}
+#year-stats-table td { padding: 3px 6px; }
+#year-stats-table tbody tr { cursor: default; }
+#year-stats-table td:first-child { font-weight: 700; color: var(--accent); }
+
+/* ── Elevation profile overlay ────────────────────────────────────────────── */
+#elevation-overlay {
+  position: absolute;
+  bottom: 28px;
+  left: 12px;
+  right: 60px;
+  height: 130px;
+  background: rgba(15,23,42,0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+}
+#elevation-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; margin-bottom: 2px;
+}
+#elevation-title {
+  font-size: 11px; font-weight: 600; color: #22d3ee;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#elevation-close {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 4px;
+}
+#elevation-close:hover { background: var(--surface2); color: var(--text); }
+#elevation-chart { flex: 1; min-height: 0; }
+
+/* ── Visits expandable row ────────────────────────────────────────────────── */
+.visits-row td {
+  background: var(--surface2);
+  padding: 8px 12px;
+  white-space: normal;
+}
+.visits-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.visits-label { font-size: 11px; font-weight: 600; color: var(--accent); margin-right: 4px; }
+.visit-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.visit-item:hover { border-color: #22d3ee; }
+.visit-name { color: var(--text-muted); }
+.visits-more, .visits-empty, .visits-loading { font-size: 10px; color: var(--text-muted); }
+
+/* ── Grade pyramid ────────────────────────────────────────────────────────── */
+#grade-pyramid {
+  display: flex; gap: 14px; margin-left: 14px; align-items: center;
+}
+.pyramid-item { display: flex; align-items: center; gap: 5px; }
+.pyramid-label { font-size: 9px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.pyramid-bar {
+  width: 46px; height: 5px; background: var(--surface2);
+  border-radius: 999px; overflow: hidden; display: inline-block;
+}
+.pyramid-fill { display: block; height: 100%; background: var(--green); border-radius: 999px; }
+.pyramid-count { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
 
 /* ── Utility ──────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

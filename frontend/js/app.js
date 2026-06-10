@@ -1,14 +1,41 @@
 // ── App controller ────────────────────────────────────────────────────────────
 
-// ── Scramble checklist persistence ────────────────────────────────────────────
-const SCRAMBLE_KEY = "scramble_checked";
-function getChecked()       { return new Set(JSON.parse(localStorage.getItem(SCRAMBLE_KEY) || "[]")); }
-function saveChecked(set)   { localStorage.setItem(SCRAMBLE_KEY, JSON.stringify([...set])); }
-function toggleChecked(id)  {
-  const s = getChecked();
-  s.has(id) ? s.delete(id) : s.add(id);
-  saveChecked(s);
-  return s;
+// ── Scramble checklist persistence (server-backed) ────────────────────────────
+// In-memory set, synced to the backend. Survives browser data clears.
+const SCRAMBLE_KEY = "scramble_checked"; // legacy localStorage key (migrated once)
+let _checkedSet = new Set();
+
+function getChecked() { return _checkedSet; }
+
+async function initChecklist() {
+  try {
+    _checkedSet = new Set(await API.checklist());
+    // One-time migration of any legacy localStorage state
+    const legacy = JSON.parse(localStorage.getItem(SCRAMBLE_KEY) || "[]");
+    if (legacy.length) {
+      for (const id of legacy) {
+        if (!_checkedSet.has(id)) {
+          _checkedSet.add(id);
+          API.setChecklist(id, true).catch(() => {});
+        }
+      }
+      localStorage.removeItem(SCRAMBLE_KEY);
+    }
+  } catch (e) {
+    // Backend unreachable — fall back to localStorage so the UI still works
+    _checkedSet = new Set(JSON.parse(localStorage.getItem(SCRAMBLE_KEY) || "[]"));
+    console.warn("checklist: using localStorage fallback", e);
+  }
+}
+
+function toggleChecked(id) {
+  const nowDone = !_checkedSet.has(id);
+  nowDone ? _checkedSet.add(id) : _checkedSet.delete(id);
+  API.setChecklist(id, nowDone).catch(() => {
+    // Persist locally if the backend is down
+    localStorage.setItem(SCRAMBLE_KEY, JSON.stringify([..._checkedSet]));
+  });
+  return _checkedSet;
 }
 
 let state = {
@@ -56,7 +83,7 @@ async function initApp() {
   bindControls();
   initResizeHandle();
 
-  await loadTypeFilter();
+  await Promise.all([loadTypeFilter(), initChecklist()]);
   await Promise.all([
     loadSummary(),
     loadHeatmapData(),
@@ -64,6 +91,7 @@ async function initApp() {
     loadActivities(),
     loadTimeline(),
     loadSegments(),
+    loadYearStats(),
   ]);
   renderMapboxQuota();
   await loadScramblesData();
@@ -175,6 +203,31 @@ async function loadSegments() {
   } catch (e) { console.warn("segments:", e); }
 }
 
+async function loadYearStats() {
+  try {
+    const years = await API.yearStats(state.type);
+    renderYearStats(years);
+  } catch (e) { console.warn("years:", e); }
+}
+
+function renderYearStats(years) {
+  const tbody = document.getElementById("year-stats-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  years.forEach(y => {
+    const vert = y.elevation_m
+      ? (USE_MILES ? Math.round(y.elevation_m * 3.28084).toLocaleString() + " ft"
+                   : Math.round(y.elevation_m).toLocaleString() + " m")
+      : "—";
+    const dist = USE_MILES
+      ? Math.round(y.km * 0.621371).toLocaleString() + " mi"
+      : Math.round(y.km).toLocaleString() + " km";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${y.year}</td><td>${y.count}</td><td>${dist}</td><td>${vert}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
 async function loadScramblesData() {
   try {
     state.scrambles = await API.scrambles();
@@ -233,9 +286,9 @@ function renderScramblesTable() {
     tr.dataset.id = s.id;
 
     const stravaChip = hasStrava
-      ? `<span class="strava-chip" title="${s.seg_attempts} Strava segment attempts${s.seg_pr_s ? ', PR: '+fmtDuration(Math.round(s.seg_pr_s)) : ''}">⚡ ${s.seg_attempts}</span>`
+      ? `<span class="strava-chip" data-visits="${s.id}" title="${s.seg_attempts} Strava segment attempts${s.seg_pr_s ? ', PR: '+fmtDuration(Math.round(s.seg_pr_s)) : ''} — click for ascent dates">⚡ ${s.seg_attempts}</span>`
       : (s.nearby_count > 0
-        ? `<span class="strava-chip nearby" title="${s.nearby_count} nearby activities">📍 ${s.nearby_count}</span>`
+        ? `<span class="strava-chip nearby" data-visits="${s.id}" title="${s.nearby_count} likely ascents — click for dates">📍 ${s.nearby_count}</span>`
         : "");
 
     const infoUrl = scrambleInfoUrl(s);
@@ -263,8 +316,19 @@ function renderScramblesTable() {
     // Row click → fly map to route
     tr.addEventListener("click", (e) => {
       if (e.target.type === "checkbox") return;
+      if (e.target.dataset && e.target.dataset.visits) return; // chip handles itself
       flyToScramble(s);
     });
+
+    // Visits chip click → expand likely ascent dates inline
+    const chip = tr.querySelector("[data-visits]");
+    if (chip) {
+      chip.style.cursor = "pointer";
+      chip.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleVisitsRow(tr, s);
+      });
+    }
 
     tbody.appendChild(tr);
   });
@@ -274,7 +338,80 @@ function renderScramblesTable() {
   updateScramblesProgress();
 }
 
+async function toggleVisitsRow(tr, s) {
+  // Collapse if already open
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains("visits-row")) {
+    next.remove();
+    return;
+  }
+  // Remove any other open visits row
+  document.querySelectorAll(".visits-row").forEach(r => r.remove());
+
+  const row = document.createElement("tr");
+  row.className = "visits-row";
+  const td = document.createElement("td");
+  td.colSpan = 7;
+  td.innerHTML = `<div class="visits-loading">Loading ascent history…</div>`;
+  row.appendChild(td);
+  tr.after(row);
+
+  try {
+    const visits = await API.scrambleVisits(s.id);
+    if (!visits.length) {
+      td.innerHTML = `<div class="visits-empty">No GPS-detected ascents.</div>`;
+      return;
+    }
+    const items = visits.slice(0, 12).map(v => {
+      const date = fmtDate(v.date);
+      const dur  = v.duration_s ? ` · ${fmtDuration(v.duration_s)}` : "";
+      return `<span class="visit-item" data-act="${v.activity_id}" title="Click to show on map">
+        ${date} <span class="visit-name">${v.name || ""}${dur}</span></span>`;
+    }).join("");
+    const more = visits.length > 12 ? `<span class="visits-more">+${visits.length - 12} more</span>` : "";
+    td.innerHTML = `<div class="visits-list">
+      <span class="visits-label">${visits.length} likely ascent${visits.length > 1 ? "s" : ""}:</span>
+      ${items}${more}</div>`;
+
+    // Click a visit → highlight that activity on the map
+    td.querySelectorAll(".visit-item").forEach(el => {
+      el.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          const coords = await API.activityTrack(el.dataset.act);
+          if (coords.length > 1) highlightActivity(coords);
+        } catch (_) {}
+      });
+    });
+  } catch (e) {
+    td.innerHTML = `<div class="visits-empty">Could not load visits.</div>`;
+  }
+}
+
+function renderGradePyramid() {
+  const el = document.getElementById("grade-pyramid");
+  if (!el) return;
+  const checked = getChecked();
+  // Bucket: 3, 4, 5.0–5.4, 5.5+
+  const buckets = [
+    { label: "Cl.3",   match: c => c === "3" },
+    { label: "Cl.4",   match: c => c === "4" },
+    { label: "5.0–5.4",match: c => /^5\.[0-4]$/.test(c) },
+    { label: "5.5+",   match: c => /^5\.[5-9]/.test(c) },
+  ];
+  el.innerHTML = buckets.map(b => {
+    const all  = state.scrambles.filter(s => b.match(String(s.class)));
+    const done = all.filter(s => checked.has(s.id)).length;
+    const pct  = all.length ? (done / all.length) * 100 : 0;
+    return `<span class="pyramid-item" title="${done}/${all.length} ${b.label} done">
+      <span class="pyramid-label">${b.label}</span>
+      <span class="pyramid-bar"><span class="pyramid-fill" style="width:${pct}%"></span></span>
+      <span class="pyramid-count">${done}/${all.length}</span></span>`;
+  }).join("");
+}
+
 function updateScramblesProgress() {
+  renderGradePyramid();
   const checked = getChecked();
   const total   = state.scrambles.length;
   const done    = state.scrambles.filter(s => checked.has(s.id)).length;
@@ -636,6 +773,7 @@ async function selectActivity(actId) {
   if (state.selectedActivityId === actId) {
     state.selectedActivityId = null;
     clearActivityHighlight();
+    hideElevationProfile();
     document.querySelectorAll("#activities-tbody tr").forEach(tr => tr.classList.remove("active"));
     return;
   }
@@ -654,6 +792,17 @@ async function selectActivity(actId) {
       showToast("No GPS track available for this activity");
     }
   } catch (e) { console.warn("activity track:", e); }
+
+  // Elevation profile overlay
+  try {
+    const profile = await API.activityProfile(actId);
+    if (profile.length > 5) {
+      const act = state.activities.find(a => a.id === actId);
+      renderElevationProfile(profile, act ? `${act.name} — ${fmtDate(act.date)}` : "Elevation");
+    } else {
+      hideElevationProfile();
+    }
+  } catch (e) { console.warn("profile:", e); }
 }
 
 function showToast(msg) {
@@ -671,6 +820,7 @@ function refreshUnits() {
   loadSummary();
   renderRoutesTable();
   renderActivitiesTable();
+  loadYearStats();
   if (state.selectedRouteId && state.detailActivities.length) {
     const route = state.routes.find(r => r.id === state.selectedRouteId);
     showRouteDetail(route, state.detailActivities);
@@ -688,8 +838,12 @@ function bindControls() {
       loadRoutes(),
       loadActivities(),
       loadTimeline(),
+      loadYearStats(),
     ]);
   });
+
+  // Elevation overlay close
+  document.getElementById("elevation-close").addEventListener("click", hideElevationProfile);
 
   // Unit toggle
   document.getElementById("unit-toggle").addEventListener("change", e => {

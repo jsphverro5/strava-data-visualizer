@@ -113,7 +113,14 @@ def init_db():
             starred_date    TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS scramble_checklist (
+            scramble_id     TEXT PRIMARY KEY,
+            done            INTEGER DEFAULT 1,
+            done_date       TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_tp_activity    ON track_points(activity_id);
+        CREATE INDEX IF NOT EXISTS idx_tp_latlon      ON track_points(lat, lon);
         CREATE INDEX IF NOT EXISTS idx_act_date       ON activities(date);
         CREATE INDEX IF NOT EXISTS idx_act_type       ON activities(type);
         CREATE INDEX IF NOT EXISTS idx_eff_segment    ON segment_efforts(segment_uuid);

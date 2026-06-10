@@ -62,6 +62,15 @@
       <ul id="top-routes-list"></ul>
     </div>
 
+    <!-- Year-over-year -->
+    <div class="sidebar-section">
+      <label class="section-label">By Year</label>
+      <table id="year-stats-table">
+        <thead><tr><th>Year</th><th>Acts</th><th>Dist</th><th>Vert</th></tr></thead>
+        <tbody id="year-stats-tbody"></tbody>
+      </table>
+    </div>
+
     <!-- Timeline chart -->
     <div class="sidebar-section">
       <label class="section-label">Activity Timeline</label>
@@ -75,6 +84,14 @@
     <!-- Map -->
     <div id="map-container">
       <div id="map"></div>
+      <!-- Elevation profile overlay (shown when an activity is selected) -->
+      <div id="elevation-overlay" class="hidden">
+        <div id="elevation-header">
+          <span id="elevation-title"></span>
+          <button id="elevation-close" title="Close">✕</button>
+        </div>
+        <canvas id="elevation-chart"></canvas>
+      </div>
       <div id="map-controls">
         <button id="btn-fit" title="Fit all tracks">⊡</button>
         <div id="layer-toggles">
@@ -226,6 +243,7 @@
         <div id="scrambles-progress-bar-wrap">
           <div id="scrambles-progress-bar"><div id="scrambles-progress-fill"></div></div>
           <span id="scrambles-progress-label"></span>
+          <div id="grade-pyramid"></div>
         </div>
         <div id="scrambles-list-wrap">
           <table id="scrambles-table">
