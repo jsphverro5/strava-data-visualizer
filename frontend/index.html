@@ -113,6 +113,7 @@
         <button class="tab-btn" data-tab="activities">Activities</button>
         <button class="tab-btn" data-tab="segments">Segments</button>
         <button class="tab-btn" data-tab="scrambles">🧗 Scrambles</button>
+        <button class="tab-btn" data-tab="bigdays">🏔 Big Days</button>
       </div>
 
       <!-- Routes tab -->
@@ -261,6 +262,25 @@
             <tbody id="scrambles-tbody"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Big Days tab -->
+      <div id="tab-bigdays" class="tab-content">
+        <table id="bigdays-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Score</th>
+              <th data-col="day" data-type="date">Date <span class="sort-icon"></span></th>
+              <th data-col="name" data-type="str">Day <span class="sort-icon"></span></th>
+              <th data-col="type" data-type="str">Type <span class="sort-icon"></span></th>
+              <th data-col="duration_s" data-type="num">Time <span class="sort-icon"></span></th>
+              <th data-col="distance_m" data-type="num">Distance <span class="sort-icon"></span></th>
+              <th data-col="elevation_m" data-type="num">Vert <span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="bigdays-tbody"></tbody>
+        </table>
       </div>
 
       <!-- Activities tab -->

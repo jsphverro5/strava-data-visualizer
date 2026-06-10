@@ -51,6 +51,8 @@ let state = {
   activitySort:   { col: "date",        dir: "desc", type: "date" },
   segmentSort:    { col: "effort_count", dir: "desc", type: "num" },
   scrambleSort:   { col: "area",         dir: "asc",  type: "str" },
+  bigDays:        [],
+  bigDaySort:     null,  // null = server's score order
   effortSort:     { col: "start_time",  dir: "desc", type: "date" },
   routeFilter:    "",
   activityFilter: "",
@@ -92,6 +94,7 @@ async function initApp() {
     loadTimeline(),
     loadSegments(),
     loadYearStats(),
+    loadBigDays(),
   ]);
   renderMapboxQuota();
   await loadScramblesData();
@@ -201,6 +204,40 @@ async function loadSegments() {
     state.segments = await API.segments(state.segmentFilter, state.starredOnly);
     renderSegmentsTable();
   } catch (e) { console.warn("segments:", e); }
+}
+
+async function loadBigDays() {
+  try {
+    state.bigDays = await API.bigDays();
+    renderBigDaysTable();
+  } catch (e) { console.warn("bigdays:", e); }
+}
+
+function renderBigDaysTable() {
+  const sort = state.bigDaySort;
+  let data = state.bigDays || [];
+  if (sort) data = sortData(data, sort.col, sort.dir, sort.type || "num");
+
+  const tbody = document.getElementById("bigdays-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  data.forEach((d, i) => {
+    const tr = document.createElement("tr");
+    tr.dataset.actId = d.activity_id;
+    const multi = d.n_activities > 1 ? ` <span class="multi-badge" title="${d.n_activities} activities this day">×${d.n_activities}</span>` : "";
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td><span class="score-badge ${d.score >= 95 ? "score-epic" : d.score >= 85 ? "score-big" : ""}">${d.score.toFixed(0)}</span></td>
+      <td>${fmtDate(d.day)}</td>
+      <td class="name-cell">${d.name}${multi}</td>
+      <td><span class="type-badge type-${(d.type||"").replace(/\s+/g,"")}">${d.type}</span></td>
+      <td>${fmtDuration(d.duration_s)}</td>
+      <td>${fmtDist(d.distance_m)}</td>
+      <td>${fmtEle(d.elevation_m)}</td>`;
+    tr.addEventListener("click", () => selectActivity(d.activity_id));
+    tbody.appendChild(tr);
+  });
+  updateSortIcons(document.getElementById("bigdays-table"), sort || {});
 }
 
 async function loadYearStats() {
@@ -486,7 +523,7 @@ function bindTableSort(tableId, sortStateKey, renderFn) {
     th.addEventListener("click", () => {
       const col  = th.dataset.col;
       const type = th.dataset.type || "str";
-      const cur  = state[sortStateKey];
+      const cur  = state[sortStateKey] || {};
       state[sortStateKey] = {
         col,
         dir: cur.col === col && cur.dir === "asc" ? "desc" : "asc",
@@ -963,6 +1000,7 @@ function bindControls() {
   bindTableSort("routes-table",     "routeSort",    renderRoutesTable);
   bindTableSort("activities-table", "activitySort", renderActivitiesTable);
   bindTableSort("segments-table",   "segmentSort",  renderSegmentsTable);
+  bindTableSort("bigdays-table",    "bigDaySort",   renderBigDaysTable);
 
   // Segment search + starred filter
   document.getElementById("segment-search").addEventListener("input", e => {

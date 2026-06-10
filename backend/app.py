@@ -566,6 +566,86 @@ def activity_profile(act_id):
     return jsonify(profile)
 
 
+# ── Big days (significant outings) ────────────────────────────────────────────
+
+@app.get("/api/bigdays")
+def big_days():
+    """
+    Rank calendar days by an 'epic score'. Same-day activities are merged
+    (multi-recording mountain days count once). Each day is scored against
+    the athlete's own history *within its dominant activity type*, so a long
+    run ranks alongside a much longer ride.
+    score = 40% duration percentile + 30% distance + 30% vert, 0–100.
+    """
+    limit = int(request.args.get("limit", 75))
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT date(date) as day,
+               COUNT(*) as n_activities,
+               SUM(distance_m)  as distance_m,
+               SUM(duration_s)  as duration_s,
+               SUM(elevation_m) as elevation_m,
+               MAX(avg_hr)      as max_avg_hr
+        FROM activities
+        WHERE date != ''
+        GROUP BY day
+        HAVING duration_s >= 7200      -- at least 2h out; cuts noise
+    """).fetchall()
+
+    # Headline activity per day = the longest one (its name + type label the day)
+    headliners = {}
+    for h in conn.execute("""
+        SELECT date(date) as day, id, name, type, duration_s
+        FROM activities WHERE date != ''
+        ORDER BY duration_s ASC
+    """).fetchall():
+        headliners[h["day"]] = h   # last (longest) wins
+    conn.close()
+
+    days = []
+    for r in rows:
+        h = headliners.get(r["day"])
+        if not h:
+            continue
+        days.append({
+            "day": r["day"],
+            "name": h["name"],
+            "type": h["type"],
+            "activity_id": h["id"],
+            "n_activities": r["n_activities"],
+            "distance_m": r["distance_m"] or 0,
+            "duration_s": r["duration_s"] or 0,
+            "elevation_m": r["elevation_m"] or 0,
+        })
+
+    # Percentile rank within dominant type
+    def pct_rank(sorted_vals, v):
+        if not sorted_vals:
+            return 0
+        import bisect
+        return 100.0 * bisect.bisect_left(sorted_vals, v) / len(sorted_vals)
+
+    by_type = {}
+    for d in days:
+        by_type.setdefault(d["type"], {"dur": [], "dist": [], "ele": []})
+        by_type[d["type"]]["dur"].append(d["duration_s"])
+        by_type[d["type"]]["dist"].append(d["distance_m"])
+        by_type[d["type"]]["ele"].append(d["elevation_m"])
+    for t in by_type.values():
+        for k in t:
+            t[k].sort()
+
+    for d in days:
+        t = by_type[d["type"]]
+        d["score"] = round(
+            0.40 * pct_rank(t["dur"],  d["duration_s"]) +
+            0.30 * pct_rank(t["dist"], d["distance_m"]) +
+            0.30 * pct_rank(t["ele"],  d["elevation_m"]), 1)
+
+    days.sort(key=lambda d: -d["score"])
+    return jsonify(days[:limit])
+
+
 # ── Year-over-year stats ──────────────────────────────────────────────────────
 
 @app.get("/api/stats/years")
