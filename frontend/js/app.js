@@ -902,6 +902,7 @@ function refreshUnits() {
   loadSummary();
   renderRoutesTable();
   renderActivitiesTable();
+  renderBigDaysTable();
   loadYearStats();
   if (state.selectedRouteId && state.detailActivities.length) {
     const route = state.routes.find(r => r.id === state.selectedRouteId);
