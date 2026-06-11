@@ -19,7 +19,9 @@
 html, body { height: 100%; overflow: hidden; font-family: "Inter", system-ui, sans-serif; font-size: 13px; background: var(--bg); color: var(--text); }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
-#app { display: flex; height: 100vh; }
+/* 100dvh = the *visible* viewport on mobile Safari/Chrome (100vh includes the
+   area behind the browser chrome, which pushed the bottom panel off-screen) */
+#app { display: flex; height: 100vh; height: 100dvh; }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 #sidebar {
@@ -189,6 +191,11 @@ html, body { height: 100%; overflow: hidden; font-family: "Inter", system-ui, sa
   flex-shrink: 0;
   transition: background 0.15s;
   position: relative;
+  touch-action: none;   /* finger drag resizes the panel instead of scrolling */
+}
+/* Bigger touch target on phones without changing the visual */
+@media (max-width: 700px) {
+  #resize-handle { height: 14px; }
 }
 #resize-handle:hover,
 #resize-handle.dragging { background: var(--accent2); }

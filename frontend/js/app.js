@@ -1003,6 +1003,10 @@ function bindControls() {
     document.getElementById("sidebar").classList.toggle("collapsed");
     document.getElementById("sidebar-toggle").textContent =
       document.getElementById("sidebar").classList.contains("collapsed") ? "▶" : "◀";
+    // Re-measure the map after the sidebar width transition finishes
+    setTimeout(() => {
+      if (typeof map !== "undefined" && map && map.resize) map.resize();
+    }, 250);
   });
 
   // Route search
@@ -1065,10 +1069,12 @@ function initResizeHandle() {
 
   let startY, startH;
 
-  handle.addEventListener("mousedown", e => {
+  // Pointer events cover mouse AND touch (phone drag)
+  handle.addEventListener("pointerdown", e => {
     startY = e.clientY;
     startH = bottomPanel.offsetHeight;
     handle.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
     document.body.style.cursor = "ns-resize";
     document.body.style.userSelect = "none";
 
@@ -1088,20 +1094,31 @@ function initResizeHandle() {
       handle.classList.remove("dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup",  onUp);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup",   onUp);
+      handle.removeEventListener("pointercancel", onUp);
       // Save preference
       localStorage.setItem("bottomPanelH", bottomPanel.offsetHeight);
     }
 
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup",   onUp);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup",   onUp);
+    handle.addEventListener("pointercancel", onUp);
     e.preventDefault();
   });
 
-  // Restore saved height
-  const saved = localStorage.getItem("bottomPanelH");
-  if (saved) bottomPanel.style.height = parseInt(saved) + "px";
+  // Restore saved height — clamped, so a height saved on a big monitor
+  // can't swallow the whole screen on a phone
+  const saved = parseInt(localStorage.getItem("bottomPanelH") || "0");
+  if (saved) {
+    const maxH = Math.floor(main.offsetHeight * MAX_H) || saved;
+    bottomPanel.style.height = Math.min(Math.max(saved, MIN_H), maxH) + "px";
+  }
+
+  // Re-measure the map once layout settles (sidebar collapse, dvh sizing)
+  setTimeout(() => {
+    if (typeof map !== "undefined" && map && map.resize) map.resize();
+  }, 350);
 
   // Double-click resets to default
   handle.addEventListener("dblclick", () => {
