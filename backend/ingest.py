@@ -322,12 +322,21 @@ def ingest(export_dir, region=None, workers=None):
         private  = 1 if str(row.get("Private", "")).lower() in ("true","1","yes") else 0
         filename = row.get("Filename") or ""
 
+        # Upsert (not INSERT OR REPLACE) so user-set custom_name survives re-import
         cur.execute("""
-            INSERT OR REPLACE INTO activities
+            INSERT INTO activities
               (id,name,date,type,distance_m,duration_s,elevation_m,
                avg_speed_ms,max_speed_ms,avg_hr,max_hr,avg_watts,
                kudos,commute,private,filename,gpx_loaded)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
+            ON CONFLICT(id) DO UPDATE SET
+              name=excluded.name, date=excluded.date, type=excluded.type,
+              distance_m=excluded.distance_m, duration_s=excluded.duration_s,
+              elevation_m=excluded.elevation_m, avg_speed_ms=excluded.avg_speed_ms,
+              max_speed_ms=excluded.max_speed_ms, avg_hr=excluded.avg_hr,
+              max_hr=excluded.max_hr, avg_watts=excluded.avg_watts,
+              kudos=excluded.kudos, commute=excluded.commute,
+              private=excluded.private, filename=excluded.filename
         """, (act_id, name, date_str, atype, dist, dur, ele,
               avg_spd, max_spd, avg_hr, max_hr, avg_w,
               kudos, commute, private, filename))

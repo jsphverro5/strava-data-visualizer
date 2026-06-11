@@ -803,6 +803,19 @@ tr.done-row td.check-col { text-decoration: none; opacity: 1; }
 }
 .renamed-dot { color: var(--accent2); font-size: 7px; vertical-align: middle; }
 
+.rename-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+}
+tbody tr:hover .rename-btn { opacity: 0.6; }
+.rename-btn:hover { opacity: 1 !important; }
+
 /* ── Big Days ─────────────────────────────────────────────────────────────── */
 #tab-bigdays { overflow: auto; }
 .score-badge {

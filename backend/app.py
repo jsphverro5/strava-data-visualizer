@@ -190,6 +190,21 @@ def route_activities(route_id):
     return jsonify([row_to_dict(a) for a in acts])
 
 
+@app.post("/api/activities/<act_id>/name")
+def rename_activity(act_id):
+    """Set a custom activity name (used by Big Days). Survives re-ingest."""
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    conn = get_conn()
+    cur = conn.execute("UPDATE activities SET custom_name=? WHERE id=?",
+                       (name or None, act_id))
+    conn.commit()
+    found = cur.rowcount > 0
+    conn.close()
+    if not found:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"id": act_id, "name": name})
+
+
 @app.post("/api/routes/<int:route_id>/name")
 def rename_route(route_id):
     """Set a custom route name. Persisted by coordinates so it survives re-ingest."""
@@ -595,7 +610,8 @@ def big_days():
     # Headline activity per day = the longest one (its name + type label the day)
     headliners = {}
     for h in conn.execute("""
-        SELECT date(date) as day, id, name, type, duration_s
+        SELECT date(date) as day, id, COALESCE(custom_name, name) as name,
+               type, duration_s
         FROM activities WHERE date != ''
         ORDER BY duration_s ASC
     """).fetchall():

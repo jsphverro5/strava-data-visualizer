@@ -229,12 +229,25 @@ function renderBigDaysTable() {
       <td>${i + 1}</td>
       <td><span class="score-badge ${d.score >= 95 ? "score-epic" : d.score >= 85 ? "score-big" : ""}">${d.score.toFixed(0)}</span></td>
       <td>${fmtDate(d.day)}</td>
-      <td class="name-cell">${d.name}${multi}</td>
+      <td class="name-cell">${d.name}${multi} <button class="rename-btn" title="Rename day">✏️</button></td>
       <td><span class="type-badge type-${(d.type||"").replace(/\s+/g,"")}">${d.type}</span></td>
       <td>${fmtDuration(d.duration_s)}</td>
       <td>${fmtDist(d.distance_m)}</td>
       <td>${fmtEle(d.elevation_m)}</td>`;
     tr.addEventListener("click", () => selectActivity(d.activity_id));
+
+    const nameCell = tr.querySelector(".name-cell");
+    const beginRename = (e) => {
+      e.stopPropagation();
+      startInlineRename(nameCell, d.name, async (newName) => {
+        await API.renameActivity(d.activity_id, newName);
+        d.name = newName;
+        renderBigDaysTable();
+        loadActivities(); // headline activity name shows there too
+      });
+    };
+    nameCell.querySelector(".rename-btn").addEventListener("click", beginRename);
+    nameCell.addEventListener("dblclick", beginRename);
     tbody.appendChild(tr);
   });
   updateSortIcons(document.getElementById("bigdays-table"), sort || {});
@@ -541,11 +554,13 @@ function routeDisplayName(r) {
   return r.custom_name || r.name;
 }
 
-function startRouteRename(cell, route) {
+// Generic inline-rename: swaps the cell for an input; Enter/blur saves via
+// onSave(newName), Escape cancels. Caller re-renders its table afterwards.
+function startInlineRename(cell, currentName, onSave) {
   const input = document.createElement("input");
   input.type = "text";
   input.className = "rename-input";
-  input.value = routeDisplayName(route);
+  input.value = currentName;
   cell.innerHTML = "";
   cell.appendChild(input);
   input.focus();
@@ -557,14 +572,15 @@ function startRouteRename(cell, route) {
     if (finished) return;
     finished = true;
     const newName = input.value.trim();
-    if (save && newName && newName !== routeDisplayName(route)) {
+    if (save && newName && newName !== currentName) {
       try {
-        await API.renameRoute(route.id, newName);
-        route.custom_name = newName;
-        loadSummary(); // refresh top-routes sidebar
+        await onSave(newName);
+        return; // onSave re-renders
       } catch (e) { showToast("Rename failed"); }
     }
+    // Cancelled or failed — restore by re-rendering whichever table we're in
     renderRoutesTable();
+    renderBigDaysTable();
   };
 
   input.addEventListener("keydown", e => {
@@ -572,6 +588,15 @@ function startRouteRename(cell, route) {
     if (e.key === "Escape") finish(false);
   });
   input.addEventListener("blur", () => finish(true));
+}
+
+function startRouteRename(cell, route) {
+  startInlineRename(cell, routeDisplayName(route), async (newName) => {
+    await API.renameRoute(route.id, newName);
+    route.custom_name = newName;
+    loadSummary(); // refresh top-routes sidebar
+    renderRoutesTable();
+  });
 }
 
 function renderRoutesTable() {
@@ -589,7 +614,7 @@ function renderRoutesTable() {
     tr.dataset.routeId = r.id;
     tr.innerHTML = `
       <td>${i + 1}</td>
-      <td class="name-cell" title="Double-click to rename">${routeDisplayName(r)}${r.custom_name ? ' <span class="renamed-dot" title="Custom name">●</span>' : ""}</td>
+      <td class="name-cell">${routeDisplayName(r)}${r.custom_name ? ' <span class="renamed-dot" title="Custom name">●</span>' : ""} <button class="rename-btn" title="Rename route">✏️</button></td>
       <td><span class="count-badge">${r.count}</span></td>
       <td>${fmtDist(r.total_distance_m)}</td>
       <td>${fmtDuration(r.best_duration_s)}</td>
@@ -598,8 +623,13 @@ function renderRoutesTable() {
       <td>${fmtEle(r.avg_elevation_m)}</td>`;
     tr.addEventListener("click", () => selectRoute(r.id));
 
-    // Double-click name cell → inline rename
+    // Pencil button → inline rename (a plain click navigates, so the edit
+    // trigger must be its own element that stops propagation)
     const nameCell = tr.querySelector(".name-cell");
+    nameCell.querySelector(".rename-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      startRouteRename(nameCell, r);
+    });
     nameCell.addEventListener("dblclick", (e) => {
       e.stopPropagation();
       startRouteRename(nameCell, r);

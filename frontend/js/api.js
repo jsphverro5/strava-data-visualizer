@@ -34,6 +34,11 @@ const API = {
   activityProfile:  (id)           => apiFetch(`/activities/${id}/profile`),
   yearStats:        (type)         => apiFetch("/stats/years", { type }),
   bigDays:          ()             => apiFetch("/bigdays", { limit: 75 }),
+  renameActivity:   (id, name)     => fetch(`${API_BASE}/activities/${id}/name`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ name }),
+                                      }).then(r => r.json()),
   renameRoute:      (id, name)     => fetch(`${API_BASE}/routes/${id}/name`, {
                                         method: "POST",
                                         headers: { "Content-Type": "application/json" },

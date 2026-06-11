@@ -34,7 +34,8 @@ def init_db():
             commute         INTEGER DEFAULT 0,
             private         INTEGER DEFAULT 0,
             filename        TEXT,
-            gpx_loaded      INTEGER DEFAULT 0
+            gpx_loaded      INTEGER DEFAULT 0,
+            custom_name     TEXT
         );
 
         CREATE TABLE IF NOT EXISTS track_points (
