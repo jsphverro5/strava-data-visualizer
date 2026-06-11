@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the Strava Visualizer backend and open the frontend.
+# Start the Strava Visualizer backend + frontend and open the dashboard.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,11 +24,25 @@ cd "$BACKEND"
 python app.py &
 API_PID=$!
 
+echo "▶ Starting frontend on http://localhost:8080 …"
+cd "$SCRIPT_DIR"
+python3 -m http.server 8080 --directory "$FRONTEND" --bind 0.0.0.0 &>/dev/null &
+WEB_PID=$!
+
 sleep 1
 
-echo "▶ Opening dashboard …"
-open "$FRONTEND/index.html" 2>/dev/null || xdg-open "$FRONTEND/index.html" 2>/dev/null || echo "Open $FRONTEND/index.html in your browser."
+# Figure out the LAN IP so you can open the dashboard from your phone
+LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+
+echo ""
+echo "  Dashboard:   http://localhost:8080"
+if [ -n "$LAN_IP" ]; then
+  echo "  📱 On phone:  http://$LAN_IP:8080   (same Wi-Fi network)"
+fi
+echo ""
+
+open "http://localhost:8080" 2>/dev/null || xdg-open "http://localhost:8080" 2>/dev/null || true
 
 echo "   Press Ctrl+C to stop."
-trap "kill $API_PID 2>/dev/null; echo 'Stopped.'" EXIT INT TERM
+trap "kill $API_PID $WEB_PID 2>/dev/null; echo 'Stopped.'" EXIT INT TERM
 wait $API_PID

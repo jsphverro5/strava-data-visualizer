@@ -702,4 +702,5 @@ if __name__ == "__main__":
     init_db()
     threading.Thread(target=_prewarm_heatmap, daemon=True).start()
     print("Starting Strava Visualizer API on http://localhost:5050")
-    app.run(port=5050, debug=False)
+    # host=0.0.0.0 → reachable from other devices on your LAN (e.g. your phone)
+    app.run(host="0.0.0.0", port=5050, debug=False)

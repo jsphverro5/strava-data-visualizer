@@ -9,8 +9,10 @@
 //    and put your token there. That file is gitignored and overrides the value below.
 let MAPBOX_TOKEN = "YOUR_MAPBOX_TOKEN_HERE";
 
-// API base URL (Flask backend)
-let API_BASE = "http://localhost:5050/api";
+// API base URL (Flask backend). Uses whatever host the page was loaded from,
+// so the dashboard works from localhost AND from other devices on your LAN
+// (e.g. your phone hitting http://<your-computer-ip>:8080).
+let API_BASE = `http://${window.location.hostname || "localhost"}:5050/api`;
 
 // Default map center & zoom (override in config.local.js for your region)
 let MAP_CENTER = [-105.2705, 40.0150]; // Boulder, CO

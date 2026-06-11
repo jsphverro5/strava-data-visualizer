@@ -1050,6 +1050,13 @@ function bindControls() {
 // ── Resizable panel ───────────────────────────────────────────────────────────
 
 function initResizeHandle() {
+  // Phone-sized screens: start with the sidebar collapsed so the map has room
+  if (window.innerWidth < 700) {
+    document.getElementById("sidebar").classList.add("collapsed");
+    const t = document.getElementById("sidebar-toggle");
+    if (t) t.textContent = "▶";
+  }
+
   const handle      = document.getElementById("resize-handle");
   const bottomPanel = document.getElementById("bottom-panel");
   const main        = document.getElementById("main");

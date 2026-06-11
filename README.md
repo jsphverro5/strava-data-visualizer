@@ -106,6 +106,21 @@ python3 -m http.server 8080 --directory frontend   # in a second terminal
 
 ---
 
+## Use it from your phone (free)
+
+No deployment needed — your phone talks to the computer running the dashboard:
+
+1. Run `./start.sh`. It prints a **📱 On phone** URL like `http://192.168.1.23:8080`.
+2. On your phone (same Wi-Fi network), open that URL in the browser.
+3. **Add to Home Screen** (Safari: Share → Add to Home Screen; Chrome: ⋮ → Add to Home screen) — it now opens like an app.
+4. **MapBox token note:** if you restricted your token to `http://localhost/*`, also add `http://192.168.*` (or your specific IP) to the token's allowed URLs, otherwise the map tiles won't load on the phone.
+
+The sidebar starts collapsed on small screens; tap ▶ to expand it.
+
+**Away from home?** Install [Tailscale](https://tailscale.com) (free for personal use) on both the computer and phone — your phone can then reach the same URL securely from anywhere, no port forwarding or hosting costs. The computer does need to be on.
+
+---
+
 ## Re-ingesting after a new Strava export
 
 Every 6–12 months when you get a fresh export, re-run step 4 (both commands). Things that **survive** re-import automatically:
