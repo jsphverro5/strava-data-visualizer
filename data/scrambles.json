@@ -114,8 +114,8 @@
   },
   {
     "id": "fl-stairway",
-    "route": "South Ridge",
-    "formation": "Stairway to Heaven",
+    "route": "Stairway to Heaven",
+    "formation": "Skunk Canyon Ridge 1",
     "area": "Boulder Flatirons",
     "state": "CO",
     "class": "5.3",
@@ -159,7 +159,7 @@
   {
     "id": "fl-angels",
     "route": "Angel's Way",
-    "formation": "Skunk Canyon",
+    "formation": "Skunk Canyon Ridge 3",
     "area": "Boulder Flatirons",
     "state": "CO",
     "class": "5.2",
@@ -170,7 +170,7 @@
   {
     "id": "fl-satans",
     "route": "Satan's Slab",
-    "formation": "Skunk Canyon",
+    "formation": "Skunk Canyon Ridge 2",
     "area": "Boulder Flatirons",
     "state": "CO",
     "class": "5.6",
@@ -191,8 +191,8 @@
   },
   {
     "id": "fl-achaean",
-    "route": "Achaean Pronouncement",
-    "formation": "Skunk Canyon",
+    "route": "East Face",
+    "formation": "Achean Pronouncement",
     "area": "Boulder Flatirons",
     "state": "CO",
     "class": "5.7",
