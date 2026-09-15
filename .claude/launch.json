@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8080", "--directory", "frontend"],
       "port": 8080
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "backend/.venv/bin/python",
+      "runtimeArgs": ["backend/app.py"],
+      "port": 5050
     }
   ]
 }

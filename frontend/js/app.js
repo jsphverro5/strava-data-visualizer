@@ -53,6 +53,8 @@ let state = {
   scrambleSort:   { col: "area",         dir: "asc",  type: "str" },
   bigDays:        [],
   bigDaySort:     null,  // null = server's score order
+  records:        null,  // lazy-loaded on first Records tab open
+  exploration:    null,  // lazy-loaded on first Explore tab open
   effortSort:     { col: "start_time",  dir: "desc", type: "date" },
   routeFilter:    "",
   activityFilter: "",
@@ -251,6 +253,138 @@ function renderBigDaysTable() {
     tbody.appendChild(tr);
   });
   updateSortIcons(document.getElementById("bigdays-table"), sort || {});
+}
+
+// ── Records (lazy) ────────────────────────────────────────────────────────────
+
+async function loadRecords() {
+  if (state.records) { renderRecords(); return; }
+  try {
+    state.records = await API.records();
+    renderRecords();
+  } catch (e) { console.warn("records:", e); }
+}
+
+function recordCard(label, valueStr, rec) {
+  // rec: activity dict {id, name, date} or null. Clickable → highlight on map.
+  const div = el("div", "record-card");
+  div.innerHTML = `
+    <span class="record-label">${label}</span>
+    <span class="record-val">${valueStr}</span>
+    <span class="record-sub">${rec ? `${rec.name || "—"} · ${fmtDate(rec.date)}` : "—"}</span>`;
+  if (rec && rec.id) {
+    div.classList.add("clickable");
+    div.addEventListener("click", () => selectActivity(rec.id));
+  }
+  return div;
+}
+
+function plainCard(label, valueStr, sub) {
+  const div = el("div", "record-card");
+  div.innerHTML = `
+    <span class="record-label">${label}</span>
+    <span class="record-val">${valueStr}</span>
+    <span class="record-sub">${sub || ""}</span>`;
+  return div;
+}
+
+function renderRecords() {
+  const r = state.records;
+  if (!r) return;
+  const H = r.headline || {};
+
+  const cards = document.getElementById("records-headline");
+  cards.innerHTML = "";
+  if (H.distance)  cards.appendChild(recordCard("Longest Distance", fmtDist(H.distance.distance_m), H.distance));
+  if (H.elevation) cards.appendChild(recordCard("Most Vertical", fmtEle(H.elevation.elevation_m), H.elevation));
+  if (H.duration)  cards.appendChild(recordCard("Longest Duration", fmtDuration(H.duration.duration_s), H.duration));
+  if (H.speed)     cards.appendChild(recordCard("Fastest Avg Speed", fmtPace(H.speed.avg_speed_ms, H.speed.type), H.speed));
+  if (H.kudos && H.kudos.kudos) cards.appendChild(recordCard("Most Kudos", `${H.kudos.kudos} 👍`, H.kudos));
+  if (r.streak && r.streak.days > 1) {
+    cards.appendChild(plainCard("Longest Active Streak", `${r.streak.days} days`,
+      `${fmtDate(r.streak.start)} → ${fmtDate(r.streak.end)}`));
+  }
+
+  const pc = document.getElementById("records-periods");
+  pc.innerHTML = "";
+  const periodLabel = { week: "Week", month: "Month", year: "Year" };
+  ["week", "month", "year"].forEach(k => {
+    const p = r.periods?.[k];
+    if (!p) return;
+    if (p.distance)  pc.appendChild(plainCard(`Biggest ${periodLabel[k]} · Distance`, fmtDist(p.distance.value), p.distance.period));
+    if (p.elevation) pc.appendChild(plainCard(`Biggest ${periodLabel[k]} · Vert`, fmtEle(p.elevation.value), p.elevation.period));
+  });
+
+  const tb = document.getElementById("records-bytype-tbody");
+  tb.innerHTML = "";
+  (r.by_type || []).forEach(t => {
+    const cell = (rec, fmt) => rec
+      ? `${fmt(rec.val)}<span class="rec-cell-date">${fmtDate(rec.date)}</span>` : "—";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="type-badge type-${(t.type||"").replace(/\s+/g,"")}">${t.type}</span></td>
+      <td class="rec-cell" data-act="${t.distance?.id || ""}">${cell(t.distance, fmtDist)}</td>
+      <td class="rec-cell" data-act="${t.elevation?.id || ""}">${cell(t.elevation, fmtEle)}</td>
+      <td class="rec-cell" data-act="${t.duration?.id || ""}">${cell(t.duration, fmtDuration)}</td>`;
+    tr.querySelectorAll(".rec-cell").forEach(td => {
+      if (td.dataset.act) {
+        td.classList.add("clickable");
+        td.addEventListener("click", () => selectActivity(td.dataset.act));
+      }
+    });
+    tb.appendChild(tr);
+  });
+}
+
+// ── Exploration (lazy) ────────────────────────────────────────────────────────
+
+async function loadExploration() {
+  if (state.exploration) { renderExploration(); return; }
+  try {
+    state.exploration = await API.exploration();
+    renderExploration();
+  } catch (e) { console.warn("exploration:", e); }
+}
+
+function fmtArea(km2) {
+  if (km2 == null) return "—";
+  return USE_MILES
+    ? (km2 * 0.386102).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " mi²"
+    : km2.toLocaleString(undefined, { maximumFractionDigits: 1 }) + " km²";
+}
+
+function renderExploration() {
+  const e = state.exploration;
+  if (!e) return;
+
+  const cards = document.getElementById("explore-headline");
+  cards.innerHTML = "";
+  cards.appendChild(plainCard("Ground Covered", fmtArea(e.area_km2),
+    `${e.total_cells.toLocaleString()} unique ${e.cell_size_m}m cells`));
+  if (e.by_year.length) {
+    const top = e.by_year.reduce((a, b) => (b.new_cells > a.new_cells ? b : a));
+    cards.appendChild(plainCard("Most Exploratory Year", top.year,
+      `${top.new_cells.toLocaleString()} new cells`));
+    const latest = e.by_year[e.by_year.length - 1];
+    cards.appendChild(plainCard(`${latest.year}: New Ground`, `${latest.new_pct}%`,
+      `${latest.new_cells.toLocaleString()} new of ${latest.active_cells.toLocaleString()} cells`));
+  }
+
+  const tb = document.getElementById("exploration-tbody");
+  tb.innerHTML = "";
+  e.by_year.forEach(y => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${y.year}</td>
+      <td><span class="count-badge">${y.new_cells.toLocaleString()}</span></td>
+      <td>${y.repeat_cells.toLocaleString()}</td>
+      <td>${y.new_pct}%</td>
+      <td>${fmtArea(y.area_km2)}</td>
+      <td>${y.cumulative_cells.toLocaleString()}</td>`;
+    tb.appendChild(tr);
+  });
+
+  renderExplorationChart(e.by_year);
 }
 
 async function loadYearStats() {
@@ -934,6 +1068,8 @@ function refreshUnits() {
   renderActivitiesTable();
   renderBigDaysTable();
   loadYearStats();
+  if (state.records)     renderRecords();
+  if (state.exploration) renderExploration();
   if (state.selectedRouteId && state.detailActivities.length) {
     const route = state.routes.find(r => r.id === state.selectedRouteId);
     showRouteDetail(route, state.detailActivities);
@@ -1133,4 +1269,8 @@ function switchTab(tab) {
     b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-content").forEach(c =>
     c.classList.toggle("active", c.id === `tab-${tab}`));
+
+  // Lazy-load heavier tabs the first time they're opened
+  if (tab === "records") loadRecords();
+  if (tab === "explore") loadExploration();
 }

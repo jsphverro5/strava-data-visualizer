@@ -9,8 +9,11 @@ data/strava.db
 data/strava.db-wal
 data/strava.db-shm
 
-# Strava export (your raw data)
+# Strava export (your raw data) — folders, zips, and DB backups
 strava-data/
+data/export_*/
+data/*.zip
+data/strava.db.bak-*
 
 # Local config with private MapBox token
 frontend/js/config.local.js
