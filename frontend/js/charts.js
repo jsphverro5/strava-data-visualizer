@@ -3,6 +3,7 @@
 let timelineChart = null;
 let routeSpeedChart = null;
 let elevationChart = null;
+let explorationChart = null;
 
 function renderElevationProfile(profile, title) {
   // profile: [[cumulative_m, ele_m], ...]
@@ -112,6 +113,42 @@ function renderTimeline(data) {
         x: { ticks: { color: "#64748b", maxRotation: 45 }, grid: { color: "#1e293b" } },
         y:  { position: "left",  ticks: { color: "#64748b" }, grid: { color: "#1e293b" } },
         y1: { position: "right", ticks: { color: "#3b82f6" }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
+
+function renderExplorationChart(byYear) {
+  // Stacked bars: new vs repeated cells per year, plus cumulative-explored line
+  const labels = byYear.map(y => y.year);
+  const nw     = byYear.map(y => y.new_cells);
+  const rp     = byYear.map(y => y.repeat_cells);
+  const cum    = byYear.map(y => y.cumulative_cells);
+
+  if (explorationChart) explorationChart.destroy();
+  const canvas = document.getElementById("exploration-chart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  explorationChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type: "bar", label: "New ground", data: nw, stack: "cells",
+          backgroundColor: "rgba(34,211,238,0.75)", borderColor: "#22d3ee", borderWidth: 1, yAxisID: "y" },
+        { type: "bar", label: "Repeated", data: rp, stack: "cells",
+          backgroundColor: "rgba(100,116,139,0.45)", borderColor: "#64748b", borderWidth: 1, yAxisID: "y" },
+        { type: "line", label: "Cumulative explored", data: cum,
+          borderColor: "#f97316", backgroundColor: "rgba(249,115,22,0.1)",
+          borderWidth: 2, pointRadius: 2, tension: 0.3, yAxisID: "y1" },
+      ],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        x:  { stacked: true, ticks: { color: "#64748b", maxRotation: 45 }, grid: { color: "#1e293b" } },
+        y:  { stacked: true, position: "left", ticks: { color: "#64748b" }, grid: { color: "#1e293b" },
+              title: { display: true, text: "cells / year", color: "#64748b" } },
+        y1: { position: "right", ticks: { color: "#f97316" }, grid: { drawOnChartArea: false } },
       },
     },
   });

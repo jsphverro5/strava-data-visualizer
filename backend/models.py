@@ -93,6 +93,7 @@ def init_db():
             start_lon       REAL,
             end_lat         REAL,
             end_lon         REAL,
+            attempt_count   INTEGER DEFAULT 0,
             effort_count    INTEGER DEFAULT 0,
             pr_time_s       REAL,               -- best elapsed time
             avg_time_s      REAL,

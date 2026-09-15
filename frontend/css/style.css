@@ -841,6 +841,46 @@ tbody tr:hover .rename-btn { opacity: 0.6; }
 /* ── Utility ──────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 
+/* ── Records & Explore tabs ───────────────────────────────────────────────── */
+#tab-records, #tab-explore { padding: 12px; gap: 14px; }
+
+.records-subhead {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.record-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.record-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.record-card.clickable { cursor: pointer; transition: border-color 0.1s, background 0.1s; }
+.record-card.clickable:hover { border-color: var(--accent); background: var(--surface); }
+.record-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+.record-val   { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.record-sub   { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#records-bytype-table td.rec-cell.clickable { cursor: pointer; }
+#records-bytype-table td.rec-cell.clickable:hover { background: var(--surface2); }
+.rec-cell-date { display: block; font-size: 10px; color: var(--text-muted); }
+
+#explore-chart-wrap { height: 220px; display: flex; flex-direction: column; flex-shrink: 0; }
+#exploration-chart  { flex: 1; min-height: 0; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

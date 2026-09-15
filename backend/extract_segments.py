@@ -120,9 +120,10 @@ def extract(export_dir, workers=None):
     BATCH       = 100
     total_efforts = 0
     t0          = time.time()
-    seg_meta    = {}   # uuid → metadata dict
-    seg_times   = {}   # uuid → [elapsed_s, ...]
-    all_efforts = []   # flat list of all effort dicts
+    seg_meta     = {}   # uuid → metadata dict
+    seg_times    = {}   # uuid → [elapsed_s, ...] (completions only)
+    seg_attempts = {}   # uuid → total effort count (completions + DNFs)
+    all_efforts  = []   # flat list of all effort dicts
 
     with mp.Pool(processes=n_workers) as pool:
         for batch_start in range(0, len(tasks), BATCH):
@@ -136,8 +137,10 @@ def extract(export_dir, workers=None):
                         seg_meta[uuid] = {k: e[k] for k in
                             ("name", "sport", "start_lat", "start_lon", "end_lat", "end_lon")}
                         seg_times[uuid] = []
+                        seg_attempts[uuid] = 0
                     if e["elapsed_s"]:
                         seg_times[uuid].append(e["elapsed_s"])
+                    seg_attempts[uuid] += 1
                     all_efforts.append(e)
                     total_efforts += 1
 
@@ -153,12 +156,13 @@ def extract(export_dir, workers=None):
         cur.execute("""
             INSERT OR REPLACE INTO segments
               (uuid, name, sport, start_lat, start_lon, end_lat, end_lon,
-               effort_count, pr_time_s, avg_time_s, total_distance_m)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               attempt_count, effort_count, pr_time_s, avg_time_s, total_distance_m)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             uuid, meta["name"], meta["sport"],
             meta["start_lat"], meta["start_lon"],
             meta["end_lat"],   meta["end_lon"],
+            seg_attempts[uuid],
             len(times),
             min(times) if times else None,
             sum(times)/len(times) if times else None,

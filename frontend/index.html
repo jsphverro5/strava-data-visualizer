@@ -12,7 +12,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="css/style.css?v=7" />
+  <link rel="stylesheet" href="css/style.css?v=8" />
 </head>
 <body>
 
@@ -114,6 +114,8 @@
         <button class="tab-btn" data-tab="segments">Segments</button>
         <button class="tab-btn" data-tab="scrambles">🧗 Scrambles</button>
         <button class="tab-btn" data-tab="bigdays">🏔 Big Days</button>
+        <button class="tab-btn" data-tab="records">🏅 Records</button>
+        <button class="tab-btn" data-tab="explore">🧭 Explore</button>
       </div>
 
       <!-- Routes tab -->
@@ -305,18 +307,65 @@
           <tbody id="activities-tbody"></tbody>
         </table>
       </div>
+
+      <!-- Records tab -->
+      <div id="tab-records" class="tab-content">
+        <div id="records-headline" class="record-cards"></div>
+        <div id="records-periods-wrap">
+          <label class="records-subhead">Biggest Week · Month · Year</label>
+          <div id="records-periods" class="record-cards"></div>
+        </div>
+        <div id="records-bytype-wrap">
+          <label class="records-subhead">Best Single Outing by Type</label>
+          <table id="records-bytype-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Longest Distance</th>
+                <th>Most Vertical</th>
+                <th>Longest Duration</th>
+              </tr>
+            </thead>
+            <tbody id="records-bytype-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Explore tab -->
+      <div id="tab-explore" class="tab-content">
+        <div id="explore-headline" class="record-cards"></div>
+        <div id="explore-chart-wrap">
+          <label class="records-subhead">New vs. Repeated Ground by Year</label>
+          <canvas id="exploration-chart"></canvas>
+        </div>
+        <div id="explore-table-wrap">
+          <table id="exploration-table">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>New Cells</th>
+                <th>Repeated</th>
+                <th>% New</th>
+                <th>Area Covered</th>
+                <th>Cumulative</th>
+              </tr>
+            </thead>
+            <tbody id="exploration-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
   </main>
 </div>
 
-<script src="js/config.js?v=7"></script>
+<script src="js/config.js?v=8"></script>
 <!-- Optional local overrides (gitignored). Loaded if present; ignored if missing. -->
-<script src="js/config.local.js?v=7" onerror="console.info('No config.local.js — using defaults from config.js')"></script>
-<script src="js/utils.js?v=7"></script>
-<script src="js/api.js?v=7"></script>
-<script src="js/map.js?v=7"></script>
-<script src="js/charts.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/config.local.js?v=8" onerror="console.info('No config.local.js — using defaults from config.js')"></script>
+<script src="js/utils.js?v=8"></script>
+<script src="js/api.js?v=8"></script>
+<script src="js/map.js?v=8"></script>
+<script src="js/charts.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>

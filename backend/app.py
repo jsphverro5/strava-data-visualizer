@@ -687,6 +687,189 @@ def stats_years():
     return jsonify([row_to_dict(r) for r in rows])
 
 
+# ── Personal records ──────────────────────────────────────────────────────────
+
+@app.get("/api/records")
+def personal_records():
+    """
+    All-time bests: headline single-outing records, per-type bests, biggest
+    week/month/year by distance and vert, and the longest active-day streak.
+    Single-outing records carry their activity_id so the UI can highlight them.
+    """
+    conn = get_conn()
+
+    ACT_COLS = ("id, COALESCE(custom_name, name) as name, type, date, "
+                "distance_m, duration_s, elevation_m, avg_speed_ms, kudos")
+
+    # Duration records are vulnerable to a watch left recording for hours/days.
+    # An outing counts if EITHER it kept moving (elapsed-implied speed clears a
+    # slow-walk 0.2 m/s floor — keeps genuine multi-day ultras) OR it's a short
+    # session under 12h (keeps distance-less indoor efforts like lifting/swims).
+    # A forgotten watch (huge duration, ~0 movement) fails both.
+    DURATION_SANE = (
+        "duration_s > 0 AND ("
+        "  (distance_m >= 1000 AND CAST(distance_m AS REAL) / duration_s >= 0.2)"
+        "  OR duration_s <= 43200"
+        ")")
+    # Avg-speed records: require real distance/time and cap absurd GPS blips.
+    SPEED_SANE = "distance_m >= 3000 AND duration_s >= 600 AND avg_speed_ms < 30"
+
+    def best(col, extra=""):
+        row = conn.execute(f"""
+            SELECT {ACT_COLS}
+            FROM activities
+            WHERE date != '' AND {col} IS NOT NULL {extra}
+            ORDER BY {col} DESC LIMIT 1
+        """).fetchone()
+        return row_to_dict(row) if row else None
+
+    headline = {
+        "distance":  best("distance_m"),
+        "elevation": best("elevation_m"),
+        "duration":  best("duration_s", f"AND {DURATION_SANE}"),
+        "speed":     best("avg_speed_ms", f"AND {SPEED_SANE}"),
+        "kudos":     best("kudos"),
+    }
+
+    # Best single outing per activity type (distance / vert / duration)
+    by_type = []
+    types = [r["type"] for r in conn.execute(
+        "SELECT type, COUNT(*) c FROM activities "
+        "WHERE type != '' AND date != '' GROUP BY type ORDER BY c DESC"
+    ).fetchall()]
+    for t in types:
+        def bt(col, extra=""):
+            r = conn.execute(f"""
+                SELECT id, COALESCE(custom_name, name) as name, date, {col} as val
+                FROM activities
+                WHERE type=? AND {col} IS NOT NULL AND {col} > 0 AND date != '' {extra}
+                ORDER BY {col} DESC LIMIT 1
+            """, (t,)).fetchone()
+            return row_to_dict(r) if r else None
+        by_type.append({
+            "type": t,
+            "distance":  bt("distance_m"),
+            "elevation": bt("elevation_m"),
+            "duration":  bt("duration_s", f"AND {DURATION_SANE}"),
+        })
+
+    # Biggest week / month / year by distance, vert, and moving time
+    def period_best(fmt):
+        rows = [r for r in conn.execute(f"""
+            SELECT strftime('{fmt}', date) as period,
+                   SUM(distance_m)  as distance_m,
+                   SUM(elevation_m) as elevation_m,
+                   SUM(duration_s)  as duration_s
+            FROM activities WHERE date != ''
+            GROUP BY period
+        """).fetchall() if r["period"]]
+        def top(key):
+            b = max(rows, key=lambda r: r[key] or 0, default=None)
+            return {"period": b["period"], "value": b[key]} if b and b[key] else None
+        return {"distance": top("distance_m"),
+                "elevation": top("elevation_m"),
+                "duration": top("duration_s")}
+
+    periods = {
+        "week":  period_best("%Y-W%W"),
+        "month": period_best("%Y-%m"),
+        "year":  period_best("%Y"),
+    }
+
+    # Longest run of consecutive active days
+    from datetime import datetime
+    days = [r["d"] for r in conn.execute(
+        "SELECT DISTINCT date(date) as d FROM activities WHERE date != '' ORDER BY d"
+    ).fetchall()]
+    conn.close()
+
+    streak = {"days": 0, "start": None, "end": None}
+    if days:
+        best_len, best_start, best_end = 1, days[0], days[0]
+        cur_len, cur_start = 1, days[0]
+        prev = datetime.fromisoformat(days[0])
+        for d in days[1:]:
+            cur = datetime.fromisoformat(d)
+            cur_len = cur_len + 1 if (cur - prev).days == 1 else 1
+            if cur_len == 1:
+                cur_start = d
+            if cur_len > best_len:
+                best_len, best_start, best_end = cur_len, cur_start, d
+            prev = cur
+        streak = {"days": best_len, "start": best_start, "end": best_end}
+
+    return jsonify({"headline": headline, "by_type": by_type,
+                    "periods": periods, "streak": streak})
+
+
+# ── Exploration ───────────────────────────────────────────────────────────────
+
+# Cached serialized JSON — the full-track scan is as heavy as the heatmap build.
+_exploration_cache = None
+
+def _build_exploration():
+    import math
+    CELL = 0.0005   # ~55m grid, same resolution as the heatmap
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT strftime('%Y', a.date) as year, tp.lat, tp.lon
+        FROM activities a
+        JOIN track_points tp ON tp.activity_id = a.id
+        WHERE a.gpx_loaded=1 AND a.date != ''
+        ORDER BY a.date
+    """).fetchall()
+    conn.close()
+
+    seen     = set()   # every cell ever visited
+    per_year = {}      # year -> {"active": set(cells), "new": int}
+    lat_sum, lat_n = 0.0, 0
+    for r in rows:
+        if r["lat"] is None or r["lon"] is None or not r["year"]:
+            continue
+        key = (round(r["lon"] / CELL), round(r["lat"] / CELL))
+        py = per_year.setdefault(r["year"], {"active": set(), "new": 0})
+        py["active"].add(key)
+        if key not in seen:
+            seen.add(key)
+            py["new"] += 1
+        lat_sum += r["lat"]; lat_n += 1
+
+    mean_lat    = (lat_sum / lat_n) if lat_n else 0.0
+    cell_lat_m  = 110540 * CELL
+    cell_lon_m  = 111320 * CELL * math.cos(math.radians(mean_lat))
+    cell_km2    = (cell_lat_m * cell_lon_m) / 1e6
+
+    cumulative = 0
+    by_year = []
+    for y in sorted(per_year):
+        newc   = per_year[y]["new"]
+        active = len(per_year[y]["active"])
+        cumulative += newc
+        by_year.append({
+            "year": y,
+            "new_cells":        newc,
+            "repeat_cells":     active - newc,
+            "active_cells":     active,
+            "cumulative_cells": cumulative,
+            "new_pct":          round(100.0 * newc / active, 1) if active else 0,
+            "area_km2":         round(active * cell_km2, 1),
+        })
+
+    return {
+        "cell_size_m":  round(cell_lat_m),
+        "total_cells":  len(seen),
+        "area_km2":     round(len(seen) * cell_km2, 1),
+        "by_year":      by_year,
+    }
+
+@app.get("/api/exploration")
+def exploration():
+    global _exploration_cache
+    if _exploration_cache is None:
+        _exploration_cache = json.dumps(_build_exploration())
+    return app.response_class(_exploration_cache, mimetype="application/json")
+
+
 def _prewarm_heatmap():
     """Build the all-types heatmap cache in the background so the first page
     load doesn't wait ~10s for it."""
